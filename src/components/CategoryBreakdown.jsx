@@ -10,9 +10,9 @@ function CustomTooltip({ active, payload }) {
   if (!active || !payload || !payload.length) return null
   const { name, count, minutes } = payload[0].payload
   return (
-    <div className="bg-white px-3 py-2 rounded shadow border border-slate-200 text-sm">
-      <div className="font-semibold text-slate-800">{name}</div>
-      <div className="text-slate-500">{count} events · {minutes} min</div>
+    <div className="bg-white dark:bg-slate-800 px-3 py-2 rounded shadow border border-slate-200 dark:border-slate-700 text-sm">
+      <div className="font-semibold text-slate-800 dark:text-slate-100">{name}</div>
+      <div className="text-slate-500 dark:text-slate-300">{count} events · {minutes} min</div>
     </div>
   )
 }
@@ -24,20 +24,22 @@ function renderLabel({ name, percent }) {
 }
 
 export default function CategoryBreakdown({ byCategory }) {
+  const cardClass = "bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md transition-colors"
+
   if (!byCategory || byCategory.length === 0) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+      <div className={cardClass}>
+        <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-4">
           Today by category
         </h2>
-        <p className="text-slate-400 text-sm">No data yet today.</p>
+        <p className="text-slate-400 dark:text-slate-500 text-sm">No data yet today.</p>
       </div>
     )
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md">
-      <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+    <div className={cardClass}>
+      <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-4">
         Today by category
       </h2>
       <ResponsiveContainer width="100%" height={320}>
@@ -53,7 +55,7 @@ export default function CategoryBreakdown({ byCategory }) {
             labelLine={false}
           >
             {byCategory.map((entry, i) => (
-              <Cell key={i} fill={colorFor(entry.isProductive)} />
+              <Cell key={i} fill={colorFor(entry.isProductive)} stroke="none" />
             ))}
           </Pie>
           <Tooltip content={<CustomTooltip />} />
@@ -61,6 +63,7 @@ export default function CategoryBreakdown({ byCategory }) {
             verticalAlign="bottom"
             iconType="circle"
             wrapperStyle={{ fontSize: 13 }}
+            formatter={(value) => <span className="text-slate-600 dark:text-slate-300">{value}</span>}
           />
         </PieChart>
       </ResponsiveContainer>

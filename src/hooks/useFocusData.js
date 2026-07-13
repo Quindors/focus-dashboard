@@ -3,12 +3,18 @@ import { fetchFocusRows, fetchCategories } from '../lib/dataSource'
 
 const ROWS_PER_MINUTE = 6  // decision_interval = 10s → 6 rows/min
 
-export function useFocusData() {
+// Polls the data source on an interval so the dashboard updates in near real
+// time as the monitor writes new rows. The first load toggles `loading`;
+// subsequent refreshes update silently and bump `lastUpdated`.
+export function useFocusData(pollMs = 15000) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [lastUpdated, setLastUpdated] = useState(null)
 
   useEffect(() => {
+    let cancelled = false
+
     async function fetchAll() {
       try {
         // Today's rows: from midnight local time onwards.
@@ -95,16 +101,27 @@ export function useFocusData() {
           })
         }
 
-        setData({ today, byCategory, weekly })
-        setLoading(false)
+        if (!cancelled) {
+          setData({ today, byCategory, weekly })
+          setError(null)
+          setLastUpdated(new Date())
+          setLoading(false)
+        }
       } catch (e) {
-        setError(e.message || String(e))
-        setLoading(false)
+        if (!cancelled) {
+          setError(e.message || String(e))
+          setLoading(false)
+        }
       }
     }
 
     fetchAll()
-  }, [])
+    const id = setInterval(fetchAll, pollMs)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [pollMs])
 
-  return { data, error, loading }
+  return { data, error, loading, lastUpdated }
 }
