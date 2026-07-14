@@ -41,13 +41,17 @@ export function useFocusData(pollMs = 15000) {
         const counted = rows.filter(r => productiveMap[r.category_name] !== null
                                       && productiveMap[r.category_name] !== undefined)
         const productiveCount = counted.filter(r => productiveMap[r.category_name] === true).length
+        const offTaskCount = counted.filter(r => productiveMap[r.category_name] === false).length
 
         const today = {
           totalEvents: rows.length,                // all events, including System
+          totalMinutes: Math.round(rows.length / ROWS_PER_MINUTE),   // full screen time
           countedEvents: counted.length,           // events that influence the % calc
           productiveEvents: productiveCount,
           productivePct: counted.length === 0 ? 0 : Math.round(100 * productiveCount / counted.length),
           productiveMinutes: Math.round(productiveCount / ROWS_PER_MINUTE),
+          offTaskEvents: offTaskCount,
+          offTaskMinutes: Math.round(offTaskCount / ROWS_PER_MINUTE),
         }
 
         // --- Category breakdown for today ---
@@ -97,6 +101,7 @@ export function useFocusData(pollMs = 15000) {
             dayLabel: d.toLocaleDateString('en-US', { weekday: 'short' }),  // "Mon", "Tue"
             totalEvents: tally.total,
             productiveEvents: tally.productive,
+            productiveMinutes: Math.round(tally.productive / ROWS_PER_MINUTE),
             productivePct: tally.counted === 0 ? 0 : Math.round(100 * tally.productive / tally.counted),
           })
         }

@@ -1,13 +1,15 @@
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { useTheme } from '../theme'
+import { fmtHM } from '../lib/format'
 
 function CustomTooltip({ active, payload }) {
   if (!active || !payload || !payload.length) return null
-  const { dayLabel, date, productivePct, productiveEvents, totalEvents } = payload[0].payload
+  const { dayLabel, date, productivePct, productiveEvents, totalEvents, productiveMinutes } = payload[0].payload
   return (
     <div className="bg-white dark:bg-slate-800 px-3 py-2 rounded shadow border border-slate-200 dark:border-slate-700 text-sm">
       <div className="font-semibold text-slate-800 dark:text-slate-100">{dayLabel} · {date}</div>
       <div className="text-slate-500 dark:text-slate-300">{productivePct}% productive</div>
+      <div className="text-slate-500 dark:text-slate-300">{fmtHM(productiveMinutes)} productive</div>
       <div className="text-slate-400 dark:text-slate-500 text-xs">
         {productiveEvents} of {totalEvents} events
       </div>

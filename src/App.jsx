@@ -66,7 +66,7 @@ function App() {
             <TodayCard today={data.today} />
             <WeeklyChart weekly={data.weekly} />
             <div className="md:col-span-2">
-              <CategoryBreakdown byCategory={data.byCategory} />
+              <CategoryBreakdown byCategory={data.byCategory} totalMinutes={data.today.totalMinutes} />
             </div>
           </div>
         )}
