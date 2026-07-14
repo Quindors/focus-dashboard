@@ -27,6 +27,8 @@ function renderLabel({ name, percent }) {
 
 export default function CategoryBreakdown({ byCategory }) {
   const { isDark } = useTheme()
+  // Stroke each slice with the card background so the gap reads as a clean divider.
+  const sliceStroke = isDark ? '#0f172a' : '#ffffff'  // slate-900 / white
   const cardClass = "bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md transition-colors"
 
   if (!byCategory || byCategory.length === 0) {
@@ -54,11 +56,12 @@ export default function CategoryBreakdown({ byCategory }) {
             cx="50%"
             cy="50%"
             outerRadius={110}
+            paddingAngle={2}
             label={renderLabel}
             labelLine={false}
           >
             {byCategory.map((entry, i) => (
-              <Cell key={i} fill={colorFor(entry.isProductive, isDark)} stroke="none" />
+              <Cell key={i} fill={colorFor(entry.isProductive, isDark)} stroke={sliceStroke} strokeWidth={2} />
             ))}
           </Pie>
           <Tooltip content={<CustomTooltip />} />

@@ -1,23 +1,42 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 
-const ThemeContext = createContext({ theme: 'light', isDark: false, toggle: () => {} })
+const ThemeContext = createContext({ isDark: false, toggle: () => {} })
+
+const prefersDark = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(prefers-color-scheme: dark)').matches
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => {
+  // choice: 'system' follows the browser live; 'light'/'dark' is a manual override.
+  const [choice, setChoice] = useState(() => {
     const saved = localStorage.getItem('theme')
-    if (saved === 'light' || saved === 'dark') return saved
-    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    return saved === 'light' || saved === 'dark' ? saved : 'system'
   })
+  const [systemDark, setSystemDark] = useState(prefersDark)
+
+  // Track the browser theme so 'system' conforms live (until the user overrides).
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = (e) => setSystemDark(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
+  const isDark = choice === 'system' ? systemDark : choice === 'dark'
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark')
-    localStorage.setItem('theme', theme)
-  }, [theme])
+    document.documentElement.classList.toggle('dark', isDark)
+  }, [isDark])
 
-  const toggle = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
+  // The button sets an explicit override to the opposite of what's showing.
+  const toggle = () => {
+    const next = isDark ? 'light' : 'dark'
+    setChoice(next)
+    localStorage.setItem('theme', next)
+  }
 
   return (
-    <ThemeContext.Provider value={{ theme, isDark: theme === 'dark', toggle }}>
+    <ThemeContext.Provider value={{ isDark, toggle }}>
       {children}
     </ThemeContext.Provider>
   )
