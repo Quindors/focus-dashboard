@@ -1,9 +1,11 @@
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { useTheme } from '../theme'
 
-function colorFor(isProductive) {
+function colorFor(isProductive, isDark) {
   if (isProductive === true) return '#10b981'   // emerald-500
   if (isProductive === false) return '#ef4444'  // red-500
-  return '#94a3b8'                              // slate-400
+  // neutral (Ambiguous / System): brighter in dark mode so it stays visible
+  return isDark ? '#cbd5e1' : '#94a3b8'         // slate-300 / slate-400
 }
 
 function CustomTooltip({ active, payload }) {
@@ -24,6 +26,7 @@ function renderLabel({ name, percent }) {
 }
 
 export default function CategoryBreakdown({ byCategory }) {
+  const { isDark } = useTheme()
   const cardClass = "bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md transition-colors"
 
   if (!byCategory || byCategory.length === 0) {
@@ -55,7 +58,7 @@ export default function CategoryBreakdown({ byCategory }) {
             labelLine={false}
           >
             {byCategory.map((entry, i) => (
-              <Cell key={i} fill={colorFor(entry.isProductive)} stroke="none" />
+              <Cell key={i} fill={colorFor(entry.isProductive, isDark)} stroke="none" />
             ))}
           </Pie>
           <Tooltip content={<CustomTooltip />} />
