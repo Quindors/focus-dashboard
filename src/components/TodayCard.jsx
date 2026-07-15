@@ -14,14 +14,15 @@ function TimeStat({ minutes, label, accent = "text-slate-800 dark:text-slate-100
   const { h, m } = splitHM(minutes)
   return (
     <div>
-      <div className="flex gap-3">
+      <div className="flex gap-2 items-end">
         <div>
           <div className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-0.5">hrs</div>
           <div className={`text-3xl font-bold leading-none ${accent}`}>{h}</div>
         </div>
+        <div className={`text-3xl font-bold leading-none ${accent}`}>:</div>
         <div>
           <div className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-0.5">min</div>
-          <div className={`text-3xl font-bold leading-none ${accent}`}>{m}</div>
+          <div className={`text-3xl font-bold leading-none ${accent}`}>{String(m).padStart(2, '0')}</div>
         </div>
       </div>
       <div className="text-sm text-slate-500 dark:text-slate-400 mt-2">{label}</div>

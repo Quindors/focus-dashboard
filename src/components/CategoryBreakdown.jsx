@@ -1,6 +1,6 @@
 import { PieChart, Pie, Cell, Tooltip, Legend, Label, ResponsiveContainer } from 'recharts'
 import { useTheme } from '../theme'
-import { fmtHM } from '../lib/format'
+import { fmtHM, fmtClock } from '../lib/format'
 
 function colorFor(isProductive, isDark) {
   if (isProductive === true) return '#10b981'   // emerald-500
@@ -28,16 +28,19 @@ export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
   const centerValueColor = isDark ? '#f1f5f9' : '#1e293b'  // slate-100 / slate-800
   const cardClass = "bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md transition-colors"
 
-  // Screen-time label rendered in the donut hole.
+  // Total running time (hr:min) rendered in the donut hole.
   function renderCenter({ viewBox }) {
     const { cx, cy } = viewBox
     return (
       <g>
-        <text x={cx} y={cy - 12} textAnchor="middle" fontSize="11" letterSpacing="0.05em" fill={centerLabelColor}>
-          SCREEN TIME
+        <text x={cx} y={cy - 14} textAnchor="middle" fontSize="11" letterSpacing="0.05em" fill={centerLabelColor}>
+          TOTAL TIME
         </text>
-        <text x={cx} y={cy + 16} textAnchor="middle" fontSize="26" fontWeight="700" fill={centerValueColor}>
-          {fmtHM(totalMinutes)}
+        <text x={cx} y={cy + 16} textAnchor="middle" fontSize="30" fontWeight="700" fill={centerValueColor}>
+          {fmtClock(totalMinutes)}
+        </text>
+        <text x={cx} y={cy + 34} textAnchor="middle" fontSize="10" fill={centerLabelColor}>
+          hr:min
         </text>
       </g>
     )
@@ -77,7 +80,7 @@ export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
             ))}
             <Label content={renderCenter} position="center" />
           </Pie>
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
           <Legend
             verticalAlign="bottom"
             iconType="circle"

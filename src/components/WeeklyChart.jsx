@@ -59,7 +59,7 @@ export default function WeeklyChart({ weekly }) {
             fontSize={12}
             tickFormatter={(v) => `${v}%`}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: cursor }} />
+          <Tooltip content={<CustomTooltip />} cursor={{ fill: cursor }} isAnimationActive={false} />
           <ReferenceLine y={avgPct} stroke={refLine} strokeDasharray="4 4" />
           <Bar dataKey="productivePct" fill="#10b981" radius={[4, 4, 0, 0]} />
         </BarChart>
