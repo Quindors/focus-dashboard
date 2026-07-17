@@ -5,11 +5,13 @@ import TodayCard from './components/TodayCard'
 import CategoryBreakdown from './components/CategoryBreakdown'
 import WeeklyChart from './components/WeeklyChart'
 import ReviewPanel from './components/ReviewPanel'
+import CategoriesPanel from './components/CategoriesPanel'
 
 function TabBar({ tab, setTab }) {
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'review', label: 'Review' },
+    { id: 'categories', label: 'Categories' },
   ]
   return (
     <div className="flex gap-1 rounded-lg bg-slate-200/70 dark:bg-slate-800 p-1">
@@ -103,6 +105,8 @@ function App() {
         )}
 
         {tab === 'review' && <ReviewPanel />}
+
+        {tab === 'categories' && <CategoriesPanel />}
       </div>
     </div>
   )

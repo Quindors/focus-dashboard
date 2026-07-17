@@ -36,6 +36,19 @@ async function apiGet(path) {
   return r.json()
 }
 
+async function apiPost(path, body) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}))
+    throw new Error(data.error || `${path} -> HTTP ${r.status}`)
+  }
+  return r.json()
+}
+
 // Rows since a given Date: [{ timestamp, category_name, confidence }, ...]
 export async function fetchFocusRows(since) {
   if (isLocal) {
@@ -96,4 +109,55 @@ export async function saveCorrection(id, humanLabel) {
     .eq('id', id)
   if (error) throw new Error(error.message)
   return { ok: true, id, human_label: humanLabel }
+}
+
+// Save the same correction on a batch of events (a grouped review row).
+export async function saveCorrections(ids, humanLabel) {
+  if (isLocal) {
+    await Promise.all(ids.map((id) => saveCorrection(id, humanLabel)))
+    return { ok: true, ids, human_label: humanLabel }
+  }
+  const { error } = await supabase
+    .from('focus_logs')
+    .update({ human_label: humanLabel })
+    .in('id', ids)
+  if (error) throw new Error(error.message)
+  return { ok: true, ids, human_label: humanLabel }
+}
+
+// Add a category. is_productive: true / false / null (neutral).
+export async function addCategory({ name, description, is_productive }) {
+  if (isLocal) {
+    return apiPost('/api/category', { name, description, is_productive })
+  }
+  const { error } = await supabase
+    .from('categories')
+    .insert({ name, description, is_productive })
+  if (error) throw new Error(error.message)
+  return { ok: true, name }
+}
+
+// Edit a category. Pass newName to rename (log history follows the rename).
+export async function updateCategory(name, { newName, description, is_productive }) {
+  if (isLocal) {
+    return apiPost('/api/category/update', {
+      name,
+      new_name: newName,
+      description,
+      is_productive,
+    })
+  }
+  const target = newName || name
+  const { error } = await supabase
+    .from('categories')
+    .update({ name: target, description, is_productive })
+    .eq('name', name)
+  if (error) throw new Error(error.message)
+  if (target !== name) {
+    const a = await supabase.from('focus_logs').update({ category_name: target }).eq('category_name', name)
+    if (a.error) throw new Error(a.error.message)
+    const b = await supabase.from('focus_logs').update({ human_label: target }).eq('human_label', name)
+    if (b.error) throw new Error(b.error.message)
+  }
+  return { ok: true, name: target }
 }
