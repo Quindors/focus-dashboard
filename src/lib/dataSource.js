@@ -37,11 +37,20 @@ async function apiGet(path) {
 }
 
 async function apiPost(path, body) {
-  const r = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  let r
+  try {
+    r = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    throw new Error(
+      API_BASE
+        ? `Can't reach the cft monitor at ${API_BASE}. Is it running on this PC?`
+        : `Can't reach the local API at ${path}.`
+    )
+  }
   if (!r.ok) {
     const data = await r.json().catch(() => ({}))
     throw new Error(data.error || `${path} -> HTTP ${r.status}`)
