@@ -43,3 +43,41 @@ export async function fetchCategories() {
   if (error) throw new Error(error.message)
   return data
 }
+
+// Recent events for the review tab:
+// [{ id, timestamp, current_window, category_name, confidence, human_label, reason }, ...]
+export async function fetchRecentEvents(limit = 200) {
+  if (isLocal) {
+    return apiGet(`/api/events?limit=${limit}`)
+  }
+  const { data, error } = await supabase
+    .from('focus_logs')
+    .select('id, timestamp, current_window, category_name, confidence, human_label, reason')
+    .not('current_window', 'is', null)
+    .order('timestamp', { ascending: false })
+    .limit(limit)
+  if (error) throw new Error(error.message)
+  return data
+}
+
+// Save (or clear, with humanLabel = null) a human correction on one event.
+export async function saveCorrection(id, humanLabel) {
+  if (isLocal) {
+    const r = await fetch('/api/correct', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, human_label: humanLabel }),
+    })
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}))
+      throw new Error(body.error || `/api/correct -> HTTP ${r.status}`)
+    }
+    return r.json()
+  }
+  const { error } = await supabase
+    .from('focus_logs')
+    .update({ human_label: humanLabel })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  return { ok: true, id, human_label: humanLabel }
+}
