@@ -3,6 +3,12 @@ import { supabase } from './supabase'
 const SOURCE = import.meta.env.VITE_DATA_SOURCE || 'supabase'
 export const isLocal = SOURCE === 'local'
 
+// Where the local API lives. Empty = same origin (dashboard bundled in the exe).
+// When the dashboard is hosted (Vercel), set VITE_API_BASE to the monitor's
+// fixed local port, e.g. http://127.0.0.1:47113 — the hosted page then reads
+// data straight off your machine and nothing leaves it.
+export const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '')
+
 // Format a Date as the naive local "YYYY-MM-DD HH:MM:SS" string that the
 // desktop monitor uses for focus_logs.timestamp, so the local API's string
 // comparison lines up.
@@ -15,7 +21,17 @@ function localStamp(d) {
 }
 
 async function apiGet(path) {
-  const r = await fetch(path)
+  let r
+  try {
+    r = await fetch(`${API_BASE}${path}`)
+  } catch {
+    // Network-level failure: the monitor isn't running / not reachable.
+    throw new Error(
+      API_BASE
+        ? `Can't reach the cft monitor at ${API_BASE}. Is it running on this PC?`
+        : `Can't reach the local API at ${path}.`
+    )
+  }
   if (!r.ok) throw new Error(`${path} -> HTTP ${r.status}`)
   return r.json()
 }
@@ -63,7 +79,7 @@ export async function fetchRecentEvents(limit = 200) {
 // Save (or clear, with humanLabel = null) a human correction on one event.
 export async function saveCorrection(id, humanLabel) {
   if (isLocal) {
-    const r = await fetch('/api/correct', {
+    const r = await fetch(`${API_BASE}/api/correct`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, human_label: humanLabel }),

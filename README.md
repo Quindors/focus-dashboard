@@ -1,16 +1,66 @@
-# React + Vite
+# focus-dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite dashboard for the [project-cft](https://github.com/Quindors/project-cft)
+productivity monitor. Shows today's productive/off-task split, a category donut
+with total running time, a 7-day trend, and a **Review** tab for correcting the
+AI's classifications (corrections feed back into the classifier).
 
-Currently, two official plugins are available:
+## How it gets data
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The monitor stores everything in a **local SQLite database on your PC** and
+exposes a small read/write API on a fixed localhost port. Nothing is uploaded.
 
-## React Compiler
+```
+  Vercel (this UI)  ──fetch──►  http://127.0.0.1:47113/api   ──►  focus.db
+   (static page)                (cft monitor on your PC)          (local)
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Because the data source is local, the hosted page only works **on the PC running
+the monitor, while it's running**. It is not viewable from another device — that
+is the trade for keeping your window titles private.
 
-## Expanding the ESLint configuration
+The monitor allows the hosted origin via a CORS allowlist (`DASHBOARD_URL` /
+`CFT_ALLOWED_ORIGINS` in its `.env`) — never `*`, since that would let any site
+you visit read your activity.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Environment variables
+
+| Var | Purpose |
+|-----|---------|
+| `VITE_DATA_SOURCE` | `local` (monitor API) or `supabase` (legacy hosted DB) |
+| `VITE_API_BASE` | Local mode: monitor API base, e.g. `http://127.0.0.1:47113`. Leave empty when bundled in the exe (same origin). |
+| `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Only for `supabase` mode |
+
+## Deploy to Vercel
+
+1. Import this repo at [vercel.com/new](https://vercel.com/new) (Vite is auto-detected).
+2. Add **Environment Variables**:
+   - `VITE_DATA_SOURCE` = `local`
+   - `VITE_API_BASE` = `http://127.0.0.1:47113`
+3. Deploy. Then, in the monitor's `.env` next to `cft.exe`, point it at the site
+   so the tray opens it and CORS allows it:
+   ```
+   DASHBOARD_URL=https://<your-app>.vercel.app
+   CFT_API_PORT=47113
+   ```
+4. Restart the monitor. Tray → **Open Dashboard** now opens the hosted site,
+   which reads from your machine.
+
+Redeploys update the UI with no exe rebuild.
+
+## Local development
+
+```bash
+npm install
+cp .env.example .env.local     # defaults point at the local monitor API
+npm run dev
+```
+
+Run the cft monitor alongside it so there's an API to read. Add your dev origin
+(e.g. `http://localhost:5173`) to the monitor's `CFT_ALLOWED_ORIGINS`.
+
+## Build
+
+```bash
+npm run build     # -> dist/
+```
