@@ -1,6 +1,9 @@
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
+import { useState } from 'react'
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { useTheme } from '../theme'
 import { fmtHM, fmtClock } from '../lib/format'
+
+const RADIAN = Math.PI / 180
 
 function colorFor(isProductive, isDark) {
   if (isProductive === true) return '#10b981'   // emerald-500
@@ -9,11 +12,20 @@ function colorFor(isProductive, isDark) {
   return isDark ? '#cbd5e1' : '#94a3b8'         // slate-300 / slate-400
 }
 
-function CustomTooltip({ active, payload }) {
-  if (!active || !payload || !payload.length) return null
-  const { name, count, minutes } = payload[0].payload
+// Hover readout pinned OUTSIDE the ring at the slice's mid-angle, so it never
+// covers the donut or the center total.
+function OutsideTooltip({ hover }) {
+  if (!hover) return null
+  const { name, count, minutes, x, y, onLeft } = hover
   return (
-    <div className="bg-white dark:bg-slate-800 px-3 py-2 rounded shadow border border-slate-200 dark:border-slate-700 text-sm">
+    <div
+      className="absolute z-10 pointer-events-none bg-white dark:bg-slate-800 px-3 py-2 rounded shadow border border-slate-200 dark:border-slate-700 text-sm whitespace-nowrap"
+      style={{
+        left: x,
+        top: y,
+        transform: `translate(${onLeft ? '-100%' : '0'}, -50%)`,
+      }}
+    >
       <div className="font-semibold text-slate-800 dark:text-slate-100">{name}</div>
       <div className="text-slate-500 dark:text-slate-300">{count} events · {fmtHM(minutes)}</div>
     </div>
@@ -22,9 +34,27 @@ function CustomTooltip({ active, payload }) {
 
 export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
   const { isDark } = useTheme()
+  const [hover, setHover] = useState(null)
   // Stroke each slice with the card background so the gap reads as a clean divider.
   const sliceStroke = isDark ? '#0f172a' : '#ffffff'  // slate-900 / white
   const cardClass = "bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md transition-colors"
+
+  // Recharts hands the hovered sector's geometry to onMouseEnter — project a
+  // point just past the outer edge at the slice's mid-angle.
+  function showHover(sector) {
+    const { cx, cy, midAngle, outerRadius, name, count, minutes } = sector || {}
+    if (cx == null || midAngle == null) return
+    const r = (outerRadius || 124) + 12
+    const cos = Math.cos(-midAngle * RADIAN)
+    setHover({
+      name,
+      count,
+      minutes,
+      x: cx + r * cos,
+      y: cy + r * Math.sin(-midAngle * RADIAN),
+      onLeft: cos < 0,
+    })
+  }
 
   if (!byCategory || byCategory.length === 0) {
     return (
@@ -58,14 +88,17 @@ export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
               outerRadius={124}
               paddingAngle={2}
               labelLine={false}
+              onMouseEnter={(sector) => showHover(sector)}
+              onMouseLeave={() => setHover(null)}
             >
               {byCategory.map((entry, i) => (
                 <Cell key={i} fill={colorFor(entry.isProductive, isDark)} stroke={sliceStroke} strokeWidth={2} />
               ))}
             </Pie>
-            <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
           </PieChart>
         </ResponsiveContainer>
+
+        <OutsideTooltip hover={hover} />
 
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <div className="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500">Total time</div>

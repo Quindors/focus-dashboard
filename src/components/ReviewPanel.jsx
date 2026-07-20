@@ -12,12 +12,12 @@ function normTitle(t) {
   return s.split(/\s+/).join(' ').toLowerCase()
 }
 
-// "14:32" today, "Jul 15 14:32" otherwise.
+// "6:31 PM" today, "Jul 15 6:31 PM" otherwise.
 function timeLabel(ts) {
   const d = new Date(ts)
   if (isNaN(d)) return ts || ''
   const sameDay = d.toDateString() === new Date().toDateString()
-  const hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const hm = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   return sameDay ? hm : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${hm}`
 }
 
@@ -79,14 +79,19 @@ function GroupRow({ group, categories, productiveMap, onCorrect, busy }) {
   const corrected = !!group.human_label && group.human_label !== group.category_name
   const effective = group.human_label || group.category_name || ''
   const single = group.count === 1
-  const range = single
-    ? timeLabel(group.latest)
-    : `${timeLabel(group.earliest)}–${timeLabel(group.latest)}`
 
   return (
     <tr className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+      {/* Grouped ranges stack start/end on two lines so the column stays narrow. */}
       <td className="py-2 pr-3 text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap align-top">
-        {range}
+        {single ? (
+          timeLabel(group.latest)
+        ) : (
+          <>
+            <div>{timeLabel(group.earliest)}</div>
+            <div>–{timeLabel(group.latest)}</div>
+          </>
+        )}
       </td>
       <td className="py-2 pr-3 align-top max-w-0 w-full">
         <div className="text-sm text-slate-700 dark:text-slate-200 truncate" title={group.current_window}>
@@ -261,7 +266,7 @@ export default function ReviewPanel() {
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                <th className="pb-2 pr-3 font-medium w-28">Time</th>
+                <th className="pb-2 pr-3 font-medium w-20">Time</th>
                 <th className="pb-2 pr-3 font-medium">Window</th>
                 <th className="pb-2 pr-3 font-medium w-40">AI category</th>
                 <th className="pb-2 font-medium w-48">Correct to</th>
