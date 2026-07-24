@@ -58,6 +58,18 @@ async function apiPost(path, body) {
   return r.json()
 }
 
+// Monitor mode: 'distraction_free' (alerts on) or 'time_tracking' (log only,
+// no alerts). Mode lives on the machine running the monitor, so this always
+// talks to the local API — there is no Supabase fallback.
+export async function fetchMode() {
+  const d = await apiGet('/api/mode')
+  return d.mode
+}
+
+export async function saveMode(mode) {
+  return apiPost('/api/mode', { mode })
+}
+
 // Rows since a given Date: [{ timestamp, category_name, confidence }, ...]
 export async function fetchFocusRows(since) {
   if (isLocal) {
