@@ -70,6 +70,25 @@ export async function saveMode(mode) {
   return apiPost('/api/mode', { mode })
 }
 
+// Session intentions ("for the next N minutes I intend to do X") live on the
+// machine running the monitor, like mode — always the local API, no Supabase
+// fallback. Active shape: { id, text, started_at, ends_at, status } | null.
+export async function fetchIntention() {
+  const d = await apiGet('/api/intention')
+  return d.active
+}
+
+export async function startIntention(text, durationMin) {
+  const d = await apiPost('/api/intention', { text, duration_min: durationMin })
+  return d.active
+}
+
+// status: 'completed' | 'abandoned'
+export async function endIntention(status) {
+  const d = await apiPost('/api/intention/end', { status })
+  return d.ended
+}
+
 // Rows since a given Date: [{ timestamp, category_name, confidence }, ...]
 export async function fetchFocusRows(since) {
   if (isLocal) {

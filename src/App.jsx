@@ -7,6 +7,7 @@ import CategoryBreakdown from './components/CategoryBreakdown'
 import WeeklyChart from './components/WeeklyChart'
 import ReviewPanel from './components/ReviewPanel'
 import CategoriesPanel from './components/CategoriesPanel'
+import IntentionCard from './components/IntentionCard'
 
 function TabBar({ tab, setTab }) {
   const tabs = [
@@ -149,6 +150,7 @@ function App() {
 
         {tab === 'overview' && (
           <>
+            <IntentionCard />
             {loading && <p className="text-slate-500 dark:text-slate-400">Loading…</p>}
             {error && <p className="text-red-600 dark:text-red-400">Error: {error}</p>}
             {data && (
