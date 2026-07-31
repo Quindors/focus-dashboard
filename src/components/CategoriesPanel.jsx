@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchCategories, addCategory, updateCategory } from '../lib/dataSource'
+import { fetchCategories, addCategory, updateCategory, deleteCategory } from '../lib/dataSource'
+
+// The classifier needs these two: the prompt defaults to Ambiguous, and the
+// monitor tags system windows System. The API refuses to delete them.
+const PROTECTED = new Set(['ambiguous', 'system'])
 
 const PRODUCTIVITY = [
   { value: 'productive', label: 'Productive', is_productive: true },
@@ -42,7 +46,8 @@ function ProductivitySelect({ value, onChange, disabled }) {
 }
 
 // One editable category row. Save enables once something changed.
-function CategoryRow({ cat, onSave, busy }) {
+function CategoryRow({ cat, onSave, onDelete, busy }) {
+  const [confirming, setConfirming] = useState(false)
   const [name, setName] = useState(cat.name)
   const [description, setDescription] = useState(cat.description || '')
   const [productivity, setProductivity] = useState(toValue(cat.is_productive))
@@ -76,20 +81,54 @@ function CategoryRow({ cat, onSave, busy }) {
       <td className="py-2 pr-3 align-top w-32">
         <ProductivitySelect value={productivity} onChange={setProductivity} disabled={busy} />
       </td>
-      <td className="py-2 align-top w-20">
-        <button
-          onClick={() =>
-            onSave(cat.name, {
-              newName: name.trim(),
-              description: description.trim(),
-              is_productive: toFlag(productivity),
-            })
-          }
-          disabled={busy || !dirty || !name.trim()}
-          className="text-xs px-2.5 py-1.5 rounded-md bg-emerald-500 text-white font-medium hover:bg-emerald-600 disabled:opacity-30 disabled:hover:bg-emerald-500 transition-colors"
-        >
-          {busy ? 'Saving…' : 'Save'}
-        </button>
+      <td className="py-2 align-top w-40">
+        {confirming ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-slate-500 dark:text-slate-400">Delete?</span>
+            <button
+              onClick={() => { setConfirming(false); onDelete(cat.name) }}
+              disabled={busy}
+              title="Logged events move to Ambiguous; history is kept"
+              className="text-xs px-2 py-1.5 rounded-md bg-red-500 text-white font-medium hover:bg-red-600 disabled:opacity-30 transition-colors"
+            >
+              Yes
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              disabled={busy}
+              className="text-xs px-2 py-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              No
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() =>
+                onSave(cat.name, {
+                  newName: name.trim(),
+                  description: description.trim(),
+                  is_productive: toFlag(productivity),
+                })
+              }
+              disabled={busy || !dirty || !name.trim()}
+              className="text-xs px-2.5 py-1.5 rounded-md bg-emerald-500 text-white font-medium hover:bg-emerald-600 disabled:opacity-30 disabled:hover:bg-emerald-500 transition-colors"
+            >
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+            {!PROTECTED.has(cat.name.toLowerCase()) && (
+              <button
+                onClick={() => setConfirming(true)}
+                disabled={busy}
+                aria-label={`Delete ${cat.name}`}
+                title="Delete this category (its events move to Ambiguous)"
+                className="text-xs px-2 py-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-30 transition-colors"
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        )}
       </td>
     </tr>
   )
@@ -144,6 +183,7 @@ function AddCategoryForm({ onAdd, busy }) {
 export default function CategoriesPanel() {
   const [categories, setCategories] = useState(null)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
   const [busyName, setBusyName] = useState(null) // category being saved, or '' for the add form
 
   const load = useCallback(async () => {
@@ -172,6 +212,26 @@ export default function CategoriesPanel() {
     }
   }
 
+  async function handleDelete(name) {
+    setBusyName(name)
+    try {
+      const r = await deleteCategory(name)
+      await load()
+      setError(null)
+      const moved = r && r.moved_log_rows
+      setNotice(
+        moved
+          ? `Deleted “${name}” — ${moved} logged event${moved === 1 ? '' : 's'} moved to ${r.reassigned_to}.`
+          : `Deleted “${name}”.`
+      )
+    } catch (e) {
+      setNotice(null)
+      setError(`Could not delete category: ${e.message || e}`)
+    } finally {
+      setBusyName(null)
+    }
+  }
+
   async function handleSave(name, fields) {
     setBusyName(name)
     try {
@@ -192,13 +252,15 @@ export default function CategoriesPanel() {
       </h2>
       <p className="text-xs text-slate-400 dark:text-slate-500 mb-4">
         The AI classifies your activity into these categories — the description tells it what
-        belongs where. Renaming a category also updates your logged history. Changes reach the
-        monitor the next time it starts.
+        belongs where. Renaming a category also updates your logged history; deleting one moves
+        its logged events to Ambiguous rather than discarding them. Changes reach the monitor the
+        next time it starts.
       </p>
 
       <AddCategoryForm onAdd={handleAdd} busy={busyName === ''} />
 
       {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
+      {notice && <p className="text-sm text-emerald-600 dark:text-emerald-400 mb-3">{notice}</p>}
       {categories === null && !error && <p className="text-slate-500 dark:text-slate-400 text-sm">Loading…</p>}
 
       {categories && categories.length > 0 && (
@@ -214,7 +276,13 @@ export default function CategoriesPanel() {
             </thead>
             <tbody>
               {categories.map((c) => (
-                <CategoryRow key={c.name} cat={c} onSave={handleSave} busy={busyName === c.name} />
+                <CategoryRow
+                  key={c.name}
+                  cat={c}
+                  onSave={handleSave}
+                  onDelete={handleDelete}
+                  busy={busyName === c.name}
+                />
               ))}
             </tbody>
           </table>

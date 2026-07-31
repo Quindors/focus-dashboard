@@ -177,6 +177,24 @@ export async function addCategory({ name, description, is_productive }) {
   return { ok: true, name }
 }
 
+// Delete a category. Its logged rows are reassigned to `reassignTo` rather
+// than deleted, so history is never lost. Ambiguous/System are protected.
+export async function deleteCategory(name, reassignTo = 'Ambiguous') {
+  if (isLocal) {
+    return apiPost('/api/category/delete', { name, reassign_to: reassignTo })
+  }
+  const a = await supabase
+    .from('focus_logs')
+    .update({ category_name: reassignTo })
+    .eq('category_name', name)
+  if (a.error) throw new Error(a.error.message)
+  const b = await supabase.from('focus_logs').update({ human_label: reassignTo }).eq('human_label', name)
+  if (b.error) throw new Error(b.error.message)
+  const { error } = await supabase.from('categories').delete().eq('name', name)
+  if (error) throw new Error(error.message)
+  return { ok: true, deleted: name, reassigned_to: reassignTo }
+}
+
 // Edit a category. Pass newName to rename (log history follows the rename).
 export async function updateCategory(name, { newName, description, is_productive }) {
   if (isLocal) {

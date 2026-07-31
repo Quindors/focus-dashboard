@@ -3,6 +3,10 @@ import { endIntention, fetchIntention, isLocal, startIntention } from '../lib/da
 
 const DURATIONS = [15, 25, 45, 60, 90]
 const DEFAULT_DURATION = 45
+const CUSTOM = 'custom'
+// Mirrors the monitor's own validation (monitor/intentions.py).
+const MIN_MINUTES = 5
+const MAX_MINUTES = 480
 
 // Parse the monitor's naive local "YYYY-MM-DD HH:MM:SS" stamps explicitly —
 // Date-from-string parsing of that format is implementation-defined.
@@ -61,7 +65,9 @@ export default function IntentionCard() {
   const [active, setActive] = useState(null)
   const [ready, setReady] = useState(false)
   const [text, setText] = useState('')
+  // duration is a number of minutes, or CUSTOM while the custom field is open.
   const [duration, setDuration] = useState(DEFAULT_DURATION)
+  const [custom, setCustom] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -94,8 +100,13 @@ export default function IntentionCard() {
     setBusy(false)
   }
 
+  const minutes = duration === CUSTOM ? Number(custom) : duration
+  const minutesValid =
+    Number.isInteger(minutes) && minutes >= MIN_MINUTES && minutes <= MAX_MINUTES
+  const canStart = !busy && text.trim() !== '' && minutesValid
+
   const start = () => run(async () => {
-    setActive(await startIntention(text, duration))
+    setActive(await startIntention(text, minutes))
     setText('')
   })
   const end = (status) => run(async () => {
@@ -160,10 +171,47 @@ export default function IntentionCard() {
                 {m}m
               </button>
             ))}
+            <button
+              onClick={() => setDuration(CUSTOM)}
+              title={`Custom length (${MIN_MINUTES}-${MAX_MINUTES} minutes)`}
+              className={`px-2.5 py-1 rounded-md text-sm font-medium transition-colors ${
+                duration === CUSTOM
+                  ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
+            >
+              Custom
+            </button>
           </div>
+          {duration === CUSTOM && (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                value={custom}
+                onChange={(e) => setCustom(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && canStart) start() }}
+                min={MIN_MINUTES}
+                max={MAX_MINUTES}
+                autoFocus
+                aria-label="Custom session length in minutes"
+                placeholder="120"
+                className={`w-20 rounded-md border bg-transparent px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 ${
+                  custom !== '' && !minutesValid
+                    ? 'border-red-500 focus:ring-red-500'
+                    : 'border-slate-300 dark:border-slate-700 focus:ring-emerald-500'
+                }`}
+              />
+              <span className="text-sm text-slate-500 dark:text-slate-400">min</span>
+            </div>
+          )}
           <button
             onClick={start}
-            disabled={busy || !text.trim()}
+            disabled={!canStart}
+            title={
+              duration === CUSTOM && !minutesValid
+                ? `Enter ${MIN_MINUTES}-${MAX_MINUTES} minutes`
+                : undefined
+            }
             className="px-4 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
           >
             Start
