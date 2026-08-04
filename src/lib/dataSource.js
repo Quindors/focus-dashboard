@@ -83,9 +83,36 @@ export async function startIntention(text, durationMin) {
   return d.active
 }
 
-// status: 'completed' | 'abandoned'
+// status: 'completed' | 'abandoned'. Completing a session rolls straight into
+// the post-session break; abandoning one doesn't.
 export async function endIntention(status) {
   const d = await apiPost('/api/intention/end', { status })
+  return d.ended
+}
+
+// The monitor's resolved view of right now — phase ('break' | 'session' |
+// 'idle'), a color state, a label and a countdown. The desktop timer widget
+// and the tray icon render from this same payload, so what you see here and
+// what floats on your screen can't disagree.
+export async function fetchStatus() {
+  return apiGet('/api/status')
+}
+
+// Breaks: a fixed stretch with the monitor fully off — nothing classified,
+// nothing logged, no alerts, no intention needed. Live on the monitor's
+// machine like mode and intentions, so: local API only.
+export async function fetchBreak() {
+  const d = await apiGet('/api/break')
+  return d.active
+}
+
+export async function startBreak(durationMin) {
+  const d = await apiPost('/api/break', { duration_min: durationMin })
+  return d.active
+}
+
+export async function endBreak() {
+  const d = await apiPost('/api/break/end', {})
   return d.ended
 }
 
