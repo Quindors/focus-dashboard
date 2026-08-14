@@ -116,6 +116,28 @@ export async function endBreak() {
   return d.ended
 }
 
+// Beeminder setup lives in the monitor's .env, so: local API only. The GET
+// reports whether it's configured (never the token); the POST verifies the
+// credentials against Beeminder before saving, so a bad token or goal slug
+// comes back as a readable error instead of half-saved config.
+export async function fetchBeeminder() {
+  return apiGet('/api/beeminder')
+}
+
+export async function saveBeeminder({
+  user, token, focusGoal, sessionsGoal, createGoal, hoursPerDay, leewayDays,
+}) {
+  return apiPost('/api/beeminder', {
+    user,
+    token,
+    focus_goal: focusGoal,
+    sessions_goal: sessionsGoal || '',
+    create_goal: !!createGoal,
+    hours_per_day: hoursPerDay,
+    leeway_days: leewayDays,
+  })
+}
+
 // Rows since a given Date: [{ timestamp, category_name, confidence }, ...]
 export async function fetchFocusRows(since) {
   if (isLocal) {

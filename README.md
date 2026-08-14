@@ -5,6 +5,17 @@ productivity monitor. Shows today's productive/off-task split, a category donut
 with total running time, a 7-day trend, and a **Review** tab for correcting the
 AI's classifications (corrections feed back into the classifier).
 
+The Overview tab also carries a one-time **Connect Beeminder** card
+(`src/components/BeeminderCard.jsx`): it posts credentials to the monitor's
+`/api/beeminder`, which verifies them against Beeminder before saving to the
+`.env` on the monitor's machine. It can either connect an existing goal or —
+with `create_goal` — have the monitor create the Do More goal (units: hours)
+on the user's account, with a user-chosen daily commitment and days of
+starting leeway. The card renders only while the monitor reports the
+integration unconfigured — once credentials exist (from the card or a
+hand-edited `.env`), it disappears; "Not now" hides it per-browser via
+localStorage.
+
 ## How it gets data
 
 The monitor stores everything in a **local SQLite database on your PC** and
