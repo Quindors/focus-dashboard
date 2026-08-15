@@ -73,10 +73,15 @@ export function useFocusData(pollMs = 15000) {
           .sort((a, b) => b.count - a.count)  // largest first
 
         // --- Weekly: group rows by local date, compute productivity % per day ---
+        // The monitor's timestamps are naive LOCAL "YYYY-MM-DD HH:MM:SS"
+        // strings, so the local date is literally the first ten characters.
+        // Round-tripping through Date/toISOString converts to UTC and shifts
+        // every evening row (past 5pm at UTC-7) into the NEXT day's bucket —
+        // which is how Friday night's work showed up as Saturday-morning
+        // productivity before the user was even awake.
         const dailyTallies = {}
         for (const r of weekRows) {
-          const localDate = new Date(r.timestamp)
-          const key = localDate.toISOString().slice(0, 10)  // "YYYY-MM-DD"
+          const key = String(r.timestamp || '').slice(0, 10)  // "YYYY-MM-DD"
           if (!dailyTallies[key]) {
             dailyTallies[key] = { total: 0, productive: 0, counted: 0 }
           }
@@ -89,12 +94,17 @@ export function useFocusData(pollMs = 15000) {
         }
 
         // Build a complete 7-day array — fill in zero for missing days.
+        // Same rule as above: keys must be LOCAL dates. toISOString here only
+        // worked by luck at negative UTC offsets (local midnight is still the
+        // same date in UTC); east of Greenwich it names the previous day.
+        const localKey = (d) =>
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
         const weekly = []
         for (let i = 6; i >= 0; i--) {
           const d = new Date()
           d.setHours(0, 0, 0, 0)
           d.setDate(d.getDate() - i)
-          const key = d.toISOString().slice(0, 10)
+          const key = localKey(d)
           const tally = dailyTallies[key] || { total: 0, productive: 0, counted: 0 }
           weekly.push({
             date: key,
