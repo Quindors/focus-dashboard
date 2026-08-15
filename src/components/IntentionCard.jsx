@@ -207,9 +207,12 @@ export default function IntentionCard() {
             <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">
               {snap.label}
             </div>
+            {/* No live category here: reading it makes the dashboard the
+                foreground window, so it only ever reported the dashboard's
+                own classification. The timer widget shows the same field and
+                floats over real work, where it means something. */}
             <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
               started {timeLabel(parseStamp(snap.started_at))}
-              {snap.category && ` · reading as ${snap.category}`}
             </div>
           </div>
           <Dial snap={snap} colors={colors} />
