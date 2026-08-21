@@ -20,17 +20,16 @@ function localStamp(d) {
   )
 }
 
+// Network-level failure: the monitor isn't running / not reachable. Kept
+// free of URLs and paths — it's shown to users as-is.
+const UNREACHABLE = "Can't reach the cft monitor. Is it running on this PC?"
+
 async function apiGet(path) {
   let r
   try {
     r = await fetch(`${API_BASE}${path}`)
   } catch {
-    // Network-level failure: the monitor isn't running / not reachable.
-    throw new Error(
-      API_BASE
-        ? `Can't reach the cft monitor at ${API_BASE}. Is it running on this PC?`
-        : `Can't reach the local API at ${path}.`
-    )
+    throw new Error(UNREACHABLE)
   }
   if (!r.ok) throw new Error(`${path} -> HTTP ${r.status}`)
   return r.json()
@@ -45,11 +44,7 @@ async function apiPost(path, body) {
       body: JSON.stringify(body),
     })
   } catch {
-    throw new Error(
-      API_BASE
-        ? `Can't reach the cft monitor at ${API_BASE}. Is it running on this PC?`
-        : `Can't reach the local API at ${path}.`
-    )
+    throw new Error(UNREACHABLE)
   }
   if (!r.ok) {
     const data = await r.json().catch(() => ({}))
@@ -88,6 +83,14 @@ export async function startIntention(text, durationMin) {
 export async function endIntention(status) {
   const d = await apiPost('/api/intention/end', { status })
   return d.ended
+}
+
+// Pause the active session for one minute: the countdown freezes (its end
+// moves out by the same minute) and the monitor stops watching, exactly like
+// a short break. It resumes on its own; resuming early is endBreak() — a
+// pause is a break under the hood — and hands the unused time back.
+export async function pauseIntention() {
+  return apiPost('/api/intention/pause', {})
 }
 
 // The monitor's resolved view of right now — phase ('break' | 'session' |
@@ -212,6 +215,56 @@ export async function saveCorrections(ids, humanLabel) {
     .in('id', ids)
   if (error) throw new Error(error.message)
   return { ok: true, ids, human_label: humanLabel }
+}
+
+// The monitor's learned correction rules — one per exact window title whose
+// newest human label differs from what the AI said:
+// [{ window_title, ai_category, corrected_category, rows, last_at }, ...]
+export async function fetchCorrections() {
+  if (isLocal) {
+    return apiGet('/api/corrections')
+  }
+  const { data, error } = await supabase
+    .from('focus_logs')
+    .select('current_window, category_name, human_label, timestamp')
+    .not('human_label', 'is', null)
+    .order('timestamp', { ascending: false })
+    .limit(5000)
+  if (error) throw new Error(error.message)
+  const out = new Map()
+  for (const r of data) {
+    const w = (r.current_window || '').trim()
+    const ai = (r.category_name || '').trim()
+    const human = (r.human_label || '').trim()
+    if (!w || !human || human.toLowerCase() === ai.toLowerCase()) continue
+    const cur = out.get(w)
+    if (cur) cur.rows += 1
+    else out.set(w, { window_title: w, ai_category: ai, corrected_category: human, rows: 1, last_at: r.timestamp })
+  }
+  return [...out.values()]
+}
+
+// Retarget a correction rule to a new category, or remove it (humanLabel =
+// null). Applies to every corrected row of that exact window title; rows
+// whose label merely agrees with the AI are left alone.
+export async function updateCorrectionRule(windowTitle, humanLabel) {
+  if (isLocal) {
+    return apiPost('/api/corrections/update', { window_title: windowTitle, human_label: humanLabel })
+  }
+  const { data, error } = await supabase
+    .from('focus_logs')
+    .select('id, category_name, human_label')
+    .eq('current_window', windowTitle)
+    .not('human_label', 'is', null)
+  if (error) throw new Error(error.message)
+  const ids = (data || [])
+    .filter((r) => (r.human_label || '').trim() &&
+      (r.human_label || '').trim().toLowerCase() !== (r.category_name || '').trim().toLowerCase())
+    .map((r) => r.id)
+  if (!ids.length) throw new Error('no corrected rows for that window title')
+  const upd = await supabase.from('focus_logs').update({ human_label: humanLabel }).in('id', ids)
+  if (upd.error) throw new Error(upd.error.message)
+  return { ok: true, window_title: windowTitle, human_label: humanLabel, rows: ids.length }
 }
 
 // Add a category. is_productive: true / false / null (neutral).
