@@ -92,9 +92,16 @@ function defsFor(svg, uid) {
   const rough = el('filter', { id: 'rough' + uid, x: '-20%', y: '-20%', width: '140%', height: '140%' }, defs)
   el('feTurbulence', { type: 'fractalNoise', baseFrequency: '0.012 0.024', numOctaves: '2', seed: '7', result: 'n' }, rough)
   el('feDisplacementMap', { in: 'SourceGraphic', in2: 'n', scale: '10' }, rough)
-  const roughT = el('filter', { id: 'rt' + uid, x: '-30%', y: '-30%', width: '160%', height: '160%' }, defs)
-  el('feTurbulence', { type: 'fractalNoise', baseFrequency: '0.05 0.06', numOctaves: '2', seed: '3', result: 'n' }, roughT)
-  el('feDisplacementMap', { in: 'SourceGraphic', in2: 'n', scale: '5' }, roughT)
+  // Soft edges for MOVING things come from gradients, never filters: a
+  // filter on (or under) an animated transform re-rasterizes every frame on
+  // the CPU. Filters stay on static scenery only.
+  const gc = el('radialGradient', { id: 'gcloud' + uid }, defs)
+  const c1 = el('stop', { offset: '0%' }, gc); c1.style.stopColor = '#FDFEF6'; c1.style.stopOpacity = '.75'
+  const c2 = el('stop', { offset: '65%' }, gc); c2.style.stopColor = '#FDFEF6'; c2.style.stopOpacity = '.45'
+  const c3 = el('stop', { offset: '100%' }, gc); c3.style.stopColor = '#FDFEF6'; c3.style.stopOpacity = '0'
+  const gm = el('radialGradient', { id: 'gmist' + uid }, defs)
+  const w1 = el('stop', { offset: '0%' }, gm); w1.style.stopColor = '#FFFFFF'; w1.style.stopOpacity = '.7'
+  const w2 = el('stop', { offset: '100%' }, gm); w2.style.stopColor = '#FFFFFF'; w2.style.stopOpacity = '0'
   const soft = el('filter', { id: 'soft' + uid, x: '-60%', y: '-60%', width: '220%', height: '220%' }, defs)
   el('feGaussianBlur', { stdDeviation: '7' }, soft)
 }
@@ -124,8 +131,8 @@ function drawBackdrop(svg, uid, seedOff) {
   ;[[170, 100, 64, 0], [520, 66, 48, 1], [730, 140, 55, 2]].forEach((c) => {
     const g = el('g', { class: 'ff-drift', opacity: '.8' }, svg)
     g.style.animationDelay = -c[3] * 30 + 's'
-    el('ellipse', { cx: c[0], cy: c[1], rx: c[2], ry: 14, fill: '#FDFEF6', opacity: '.55', filter: `url(#soft${uid})` }, g)
-    el('ellipse', { cx: c[0] + 26, cy: c[1] - 10, rx: c[2] * 0.55, ry: 11, fill: '#FDFEF6', opacity: '.45', filter: `url(#soft${uid})` }, g)
+    el('ellipse', { cx: c[0], cy: c[1], rx: c[2] * 1.25, ry: 20, fill: `url(#gcloud${uid})` }, g)
+    el('ellipse', { cx: c[0] + 26, cy: c[1] - 10, rx: c[2] * 0.75, ry: 16, fill: `url(#gcloud${uid})` }, g)
   })
   const ridges = el('g', { filter: `url(#rough${uid})` }, svg)
   el('ellipse', { cx: 180, cy: 352, rx: 380, ry: 110, fill: 'var(--ff-ridge-far)', opacity: '.8' }, ridges)
@@ -148,9 +155,9 @@ function drawBackdrop(svg, uid, seedOff) {
   // Mist as thin wisps hugging the valley line — one tall ellipse read as a
   // giant grey cloud parked over the scene, especially at night.
   const mist = el('g', { class: 'ff-mist', opacity: 'var(--ff-mist-o)' }, svg)
-  el('ellipse', { cx: 340, cy: 374, rx: 250, ry: 12, fill: '#FFFFFF', opacity: '.7', filter: `url(#soft${uid})` }, mist)
-  el('ellipse', { cx: 585, cy: 382, rx: 210, ry: 10, fill: '#FFFFFF', opacity: '.55', filter: `url(#soft${uid})` }, mist)
-  el('ellipse', { cx: 460, cy: 391, rx: 300, ry: 13, fill: '#FFFFFF', opacity: '.45', filter: `url(#soft${uid})` }, mist)
+  el('ellipse', { cx: 340, cy: 374, rx: 250, ry: 16, fill: `url(#gmist${uid})` }, mist)
+  el('ellipse', { cx: 585, cy: 382, rx: 210, ry: 13, fill: `url(#gmist${uid})`, opacity: '.8' }, mist)
+  el('ellipse', { cx: 460, cy: 391, rx: 300, ry: 17, fill: `url(#gmist${uid})`, opacity: '.65' }, mist)
   const ground = el('g', { filter: `url(#rough${uid})` }, svg)
   el('ellipse', { cx: 500, cy: 590, rx: 800, ry: 225, fill: 'var(--ff-ground)' }, ground)
   el('ellipse', { cx: 500, cy: 655, rx: 840, ry: 205, fill: 'var(--ff-ground-front)' }, ground)
@@ -196,7 +203,8 @@ function drawTree(kind, lv, sc, uid, seed = 0) {
   const sway = el('g', { class: 'ff-sway' }, g)
   sway.style.animationDuration = (6 + jitter(seed + 5) * 4).toFixed(2) + 's'
   sway.style.animationDelay = (-jitter(seed + 9) * 8).toFixed(2) + 's'
-  const inner = uid ? el('g', { filter: `url(#rt${uid})` }, sway) : el('g', {}, sway)
+  // No filter on the tree itself: sway must stay a pure composited transform.
+  const inner = el('g', {}, sway)
   el('polygon', { points: pts([[-3.6, 0], [3.6, 0], [2.4, -19], [-2.4, -19]], sc), fill: 'var(--ff-trunk)' }, inner)
   if (kind === 'pine') {
     el('polygon', { points: pts([[-20, -10], [20, -10], [0, -44]], sc), class: f }, inner)
@@ -457,16 +465,28 @@ function ambientSpans(idx) {
 function Grove({ monthKey: key, sessions, idx, earnedHere, whisperText }) {
   const svgRef = useRef(null)
   const tipRef = useRef(null)
+  const sectionRef = useRef(null)
   useEffect(() => {
     renderGroveSvg(svgRef.current, tipRef.current, sessions, 'g' + idx, idx * 57, earnedHere, key)
   }, [sessions, idx, earnedHere, key])
+  // Only the grove actually on screen animates — sway, drift, mist, and the
+  // ambient layer all pause in the other groves (and while scrolled away).
+  useEffect(() => {
+    const node = sectionRef.current
+    const io = new IntersectionObserver(
+      ([e]) => node.classList.toggle('ff-live', e.intersectionRatio >= 0.5),
+      { threshold: [0, 0.5, 1] },
+    )
+    io.observe(node)
+    return () => io.disconnect()
+  }, [])
   const hrs = sessions.reduce((a, s) => a + durationMin(s), 0) / 60
   const scored = sessions.filter((s) => s.avg_align != null)
   const avg = scored.length
     ? Math.round((scored.reduce((a, s) => a + s.avg_align, 0) / scored.length) * 100)
     : null
   return (
-    <section className={`ff-grove ${seasonClass(key)}`} data-key={key}>
+    <section ref={sectionRef} className={`ff-grove ${seasonClass(key)}`} data-key={key}>
       <div className="relative">
         <svg ref={svgRef} viewBox="0 0 1000 520" role="img" aria-label={`The ${monthLabel(key)} grove`} />
         <div className="ff-ambient" aria-hidden="true">
@@ -772,6 +792,8 @@ const FOREST_CSS = `
 .ff-grow.in{transform:scale(1); transition:transform .6s cubic-bezier(.34,1.5,.64,1)}
 .ff-grow.ff-instant{transition:none}
 .ff-sway{transform-box:fill-box; transform-origin:50% 100%; animation:ff-sway 7s ease-in-out infinite alternate}
+.ff-sway,.ff-drift,.ff-mist,.ff-ambient span{animation-play-state:paused}
+.ff-live .ff-sway,.ff-live .ff-drift,.ff-live .ff-mist,.ff-live .ff-ambient span{animation-play-state:running}
 @keyframes ff-sway{from{transform:rotate(-.6deg)}to{transform:rotate(.6deg)}}
 .ff-drift{animation:ff-drift 90s ease-in-out infinite alternate}
 @keyframes ff-drift{from{transform:translateX(0)}to{transform:translateX(30px)}}
