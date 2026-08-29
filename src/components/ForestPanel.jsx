@@ -23,6 +23,7 @@ const SPECIES_LABELS = [
   ['other', 'Everything else'],
 ]
 const kindFor = (cat) => KINDS[cat] || 'other'
+const EMPTY = []
 
 // Milestones are cumulative over the whole forest; each earned one becomes a
 // permanent landmark in the grove of the month it was reached.
@@ -44,6 +45,13 @@ function el(n, a, parent) {
 const jitter = (i) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.545; return x - Math.floor(x) }
 const lush = (a) => (a == null ? 1 : a >= 0.85 ? 2 : a >= 0.7 ? 1 : 0)
 const pts = (arr, sc) => arr.map((p) => `${p[0] * sc},${p[1] * sc}`).join(' ')
+
+// y of a hill-ellipse's upper edge at x — trees stand ON the terrain curves
+// the backdrop draws, instead of in flat rows.
+function hillY(x, cx, cy, rx, ry) {
+  const t = (x - cx) / rx
+  return Math.abs(t) >= 1 ? cy : cy - ry * Math.sqrt(1 - t * t)
+}
 
 const parseTs = (s) => new Date(String(s).replace(' ', 'T'))
 function durationMin(s) {
@@ -76,7 +84,7 @@ function defsFor(svg, uid) {
   const g1 = el('stop', { offset: '0%' }, glow); g1.style.stopColor = '#FFEAA6'; g1.style.stopOpacity = '.85'
   const g2 = el('stop', { offset: '100%' }, glow); g2.style.stopColor = '#FFEAA6'; g2.style.stopOpacity = '0'
   const mg = el('radialGradient', { id: 'mglow' + uid }, defs)
-  const m1 = el('stop', { offset: '0%' }, mg); m1.style.stopColor = '#DCE6C8'; m1.style.stopOpacity = '.55'
+  const m1 = el('stop', { offset: '0%' }, mg); m1.style.stopColor = '#DCE6C8'; m1.style.stopOpacity = '.3'
   const m2 = el('stop', { offset: '100%' }, mg); m2.style.stopColor = '#DCE6C8'; m2.style.stopOpacity = '0'
   const lg = el('radialGradient', { id: 'lglow' + uid }, defs)
   const l1 = el('stop', { offset: '0%' }, lg); l1.style.stopColor = '#FFD98A'; l1.style.stopOpacity = '.8'
@@ -105,10 +113,14 @@ function drawBackdrop(svg, uid, seedOff) {
   const sun = el('g', { opacity: 'var(--ff-sun-o)' }, svg)
   el('circle', { cx: 850, cy: 96, r: 110, fill: `url(#glow${uid})` }, sun)
   el('circle', { cx: 850, cy: 96, r: 34, fill: '#F8DC96' }, sun)
+  // A full moon with faint maria, and only a tight halo — a big radial glow
+  // read as a strange "earth shadow" ring, which real moons don't have.
   const moon = el('g', { opacity: 'var(--ff-moon-o)' }, svg)
-  el('circle', { cx: 850, cy: 96, r: 80, fill: `url(#mglow${uid})` }, moon)
-  el('circle', { cx: 850, cy: 96, r: 27, fill: '#E9E4CB' }, moon)
-  el('circle', { cx: 861, cy: 88, r: 23, fill: 'var(--ff-sky-top)' }, moon)
+  el('circle', { cx: 850, cy: 96, r: 38, fill: `url(#mglow${uid})` }, moon)
+  el('circle', { cx: 850, cy: 96, r: 23, fill: '#E9E4CB' }, moon)
+  el('circle', { cx: 843, cy: 90, r: 5, fill: '#DAD4B4' }, moon)
+  el('circle', { cx: 856, cy: 103, r: 3.5, fill: '#DAD4B4' }, moon)
+  el('circle', { cx: 858, cy: 89, r: 2.5, fill: '#DAD4B4' }, moon)
   ;[[170, 100, 64, 0], [520, 66, 48, 1], [730, 140, 55, 2]].forEach((c) => {
     const g = el('g', { class: 'ff-drift', opacity: '.8' }, svg)
     g.style.animationDelay = -c[3] * 30 + 's'
@@ -118,11 +130,38 @@ function drawBackdrop(svg, uid, seedOff) {
   const ridges = el('g', { filter: `url(#rough${uid})` }, svg)
   el('ellipse', { cx: 180, cy: 352, rx: 380, ry: 110, fill: 'var(--ff-ridge-far)', opacity: '.8' }, ridges)
   el('ellipse', { cx: 840, cy: 358, rx: 400, ry: 120, fill: 'var(--ff-ridge-far)', opacity: '.8' }, ridges)
+  // A hazy treeline on the far ridges: pure scenery (tiny flat silhouettes,
+  // no trunks, no hover) so it can't be mistaken for session trees, but the
+  // horizon reads as forest instead of bare lawn.
+  const far = el('g', { opacity: '.85' }, svg)
+  for (let i = 0; i < 26; i++) {
+    const x = 20 + jitter(i + 1000 + seedOff) * 960
+    const y = (x < 500 ? hillY(x, 180, 352, 380, 110) : hillY(x, 840, 358, 400, 120)) + 4
+    tinyPine(far, x, y, 0.16 + jitter(i + 1100 + seedOff) * 0.1)
+  }
   el('ellipse', { cx: 500, cy: 385, rx: 480, ry: 105, fill: 'var(--ff-ridge-mid)' }, ridges)
-  el('ellipse', { cx: 470, cy: 355, rx: 220, ry: 60, fill: '#FFFFFF', opacity: 'var(--ff-mist-o)', filter: `url(#soft${uid})` }, svg)
+  const midline = el('g', { opacity: '.75' }, svg)
+  for (let i = 0; i < 9; i++) {
+    const x = 90 + jitter(i + 1200 + seedOff) * 820
+    tinyPine(midline, x, hillY(x, 500, 385, 480, 105) + 5, 0.2 + jitter(i + 1250 + seedOff) * 0.1)
+  }
+  el('ellipse', { class: 'ff-mist', cx: 470, cy: 355, rx: 220, ry: 60, fill: '#FFFFFF', opacity: 'var(--ff-mist-o)', filter: `url(#soft${uid})` }, svg)
   const ground = el('g', { filter: `url(#rough${uid})` }, svg)
   el('ellipse', { cx: 500, cy: 590, rx: 800, ry: 225, fill: 'var(--ff-ground)' }, ground)
   el('ellipse', { cx: 500, cy: 655, rx: 840, ry: 205, fill: 'var(--ff-ground-front)' }, ground)
+  const scrub = el('g', {}, svg)
+  for (let i = 0; i < 7; i++) {
+    const bx = 40 + jitter(i + 1300 + seedOff) * 920
+    const by = hillY(bx, 500, 590, 800, 225) + 30 + jitter(i + 1400 + seedOff) * 70
+    const bs = 5 + jitter(i + 1500 + seedOff) * 6
+    el('ellipse', { cx: bx.toFixed(0), cy: by.toFixed(0), rx: (bs * 1.7).toFixed(1), ry: bs.toFixed(1), fill: 'var(--ff-bush)', opacity: '.7' }, scrub)
+    el('circle', { cx: (bx - bs).toFixed(0), cy: (by - 3).toFixed(0), r: (bs * 0.7).toFixed(1), fill: 'var(--ff-bush)', opacity: '.7' }, scrub)
+  }
+  for (let i = 0; i < 4; i++) {
+    const gx = 60 + jitter(i + 1600 + seedOff) * 880
+    const gy = hillY(gx, 500, 655, 840, 205) + 26 + jitter(i + 1700 + seedOff) * 30
+    el('ellipse', { cx: gx.toFixed(0), cy: gy.toFixed(0), rx: (5 + jitter(i + 1800 + seedOff) * 5).toFixed(1), ry: 3.6, fill: 'var(--ff-stone)', opacity: '.45' }, scrub)
+  }
   const shafts = el('g', { opacity: 'var(--ff-shaft-o)' }, svg)
   el('polygon', { points: '820,90 878,90 700,520 560,520', fill: '#FFF3C4', opacity: '.3', filter: `url(#soft${uid})` }, shafts)
   el('polygon', { points: '860,100 900,104 980,520 850,520', fill: '#FFF3C4', opacity: '.22', filter: `url(#soft${uid})` }, shafts)
@@ -137,11 +176,22 @@ function drawBackdrop(svg, uid, seedOff) {
   }
 }
 
-function drawTree(kind, lv, sc, uid) {
+function tinyPine(parent, x, y, s) {
+  const g = el('g', { transform: `translate(${x.toFixed(1)},${y.toFixed(1)})` }, parent)
+  el('polygon', { points: pts([[-16, 0], [16, 0], [0, -46]], s), fill: 'var(--ff-treeline)' }, g)
+  el('polygon', { points: pts([[-11, -24], [11, -24], [0, -62]], s), fill: 'var(--ff-treeline)' }, g)
+}
+
+function drawTree(kind, lv, sc, uid, seed = 0) {
   const g = el('g', { class: 'ff-grow' })
   const f = `ff-${kind}-${lv}`
   if (uid) el('ellipse', { cx: 2 * sc, cy: 1, rx: 18 * sc, ry: 4 * sc, fill: '#000', opacity: 'var(--ff-shad-o)', filter: `url(#soft${uid})` }, g)
-  const inner = uid ? el('g', { filter: `url(#rt${uid})` }, g) : el('g', {}, g)
+  // The sway wrapper sits between grow-in (outer) and the painterly filter
+  // (inner) so each animation owns its own transform.
+  const sway = el('g', { class: 'ff-sway' }, g)
+  sway.style.animationDuration = (6 + jitter(seed + 5) * 4).toFixed(2) + 's'
+  sway.style.animationDelay = (-jitter(seed + 9) * 8).toFixed(2) + 's'
+  const inner = uid ? el('g', { filter: `url(#rt${uid})` }, sway) : el('g', {}, sway)
   el('polygon', { points: pts([[-3.6, 0], [3.6, 0], [2.4, -19], [-2.4, -19]], sc), fill: 'var(--ff-trunk)' }, inner)
   if (kind === 'pine') {
     el('polygon', { points: pts([[-20, -10], [20, -10], [0, -44]], sc), class: f }, inner)
@@ -218,35 +268,50 @@ function fillTip(tip, s, kind) {
   tip.append(t, m1, m2)
 }
 
-function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere) {
+// Groves that already played their grow-in this page load render instantly on
+// remount/rerender — the stagger replays only the first time a grove (at a
+// given tree count) appears, so tab switches and swipes stop "popping" trees.
+const grownGroves = new Set()
+
+function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey) {
   svg.replaceChildren()
   defsFor(svg, uid)
   drawBackdrop(svg, uid, seedOff)
-  const spots = { pond: [190, 485], lantern: [880, 470], bench: [120, 455], cabin: [860, 500], falls: [140, 500] }
+  const spots = { pond: [190, 492], lantern: [880, 487], bench: [115, 483], cabin: [848, 408], falls: [125, 404] }
   earnedHere.forEach((id) => drawLandmark(svg, uid, id, ...(spots[id] || [500, 470])))
-  const rows = [{ y: 408, s: 0.55 }, { y: 452, s: 0.75 }, { y: 498, s: 1 }]
+  const stamp = `${groveKey}:${sessions.length}`
+  const replay = !grownGroves.has(stamp)
+  grownGroves.add(stamp)
+  // Trees stand on the terrain the backdrop drew: back band on the mid-ridge
+  // crest, mid band on the meadow's upper slope, front band on the near rise.
+  const bands = [
+    { s: 0.5, x0: 130, x1: 870, y: (x) => hillY(x, 500, 385, 480, 105) + 8 },
+    { s: 0.72, x0: 70, x1: 930, y: (x) => hillY(x, 500, 590, 800, 225) + 16 },
+    { s: 1, x0: 60, x1: 940, y: (x) => hillY(x, 500, 655, 840, 205) + 18 },
+  ]
   const third = Math.ceil(sessions.length / 3) || 1
   const buckets = [[], [], []]
   sessions.forEach((s, i) => buckets[Math.min(Math.floor(i / third), 2)].push([s, i]))
   buckets.forEach((bucket, bi) => {
-    const row = rows[bi]
+    const band = bands[bi]
     bucket.forEach(([s, gi], i) => {
       const n = bucket.length
-      const x = n === 1 ? 500 : 90 + (820 / (n - 1)) * i + (jitter(gi + seedOff) - 0.5) * 30
+      const x = n === 1 ? 500 : band.x0 + ((band.x1 - band.x0) / (n - 1)) * i + (jitter(gi + seedOff) - 0.5) * 34
+      const y = band.y(x) + jitter(gi + seedOff + 3) * 6
       const mins = durationMin(s)
-      const sc = row.s * (0.6 + (Math.min(mins, 120) / 120) * 0.68)
+      const sc = band.s * (0.6 + (Math.min(mins, 120) / 120) * 0.68) * (0.92 + jitter(gi + seedOff + 7) * 0.16)
       const kind = kindFor(s.llm_category)
       const t = el('g', {
-        class: 'ff-tree', transform: `translate(${x.toFixed(1)},${row.y})`, tabindex: '0',
+        class: 'ff-tree', transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, tabindex: '0',
         'aria-label': `${s.text}, ${s.llm_category || 'uncategorized'}, ${mins} minutes`,
       }, svg)
-      const body = drawTree(kind, lush(s.avg_align), sc, uid)
+      const body = drawTree(kind, lush(s.avg_align), sc, uid, gi + seedOff)
       t.appendChild(body)
       const show = () => {
         fillTip(tip, s, kind)
         tip.style.display = 'block'
         const r = svg.getBoundingClientRect()
-        const px = (x / 1000) * r.width, py = (row.y / 520) * r.height
+        const px = (x / 1000) * r.width, py = (y / 520) * r.height
         tip.style.left = Math.min(Math.max(px - 100, 8), r.width - 260) + 'px'
         tip.style.top = Math.max(py - 128, 8) + 'px'
       }
@@ -255,10 +320,14 @@ function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere) {
       t.addEventListener('focus', show)
       t.addEventListener('pointerleave', hide)
       t.addEventListener('blur', hide)
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        body.style.transitionDelay = Math.min(gi * 30, 900) + 'ms'
-        body.classList.add('in')
-      }))
+      if (replay) {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          body.style.transitionDelay = Math.min(gi * 30, 900) + 'ms'
+          body.classList.add('in')
+        }))
+      } else {
+        body.classList.add('ff-instant', 'in')
+      }
     })
   })
   el('ellipse', { cx: 500, cy: 600, rx: 860, ry: 110, fill: 'var(--ff-fg-band)', opacity: '.85', filter: `url(#rough${uid})` }, svg)
@@ -320,6 +389,7 @@ function Mini({ kind, lv, sc, w, h }) {
     s.replaceChildren()
     const g = drawTree(kind, lv, sc, null)
     g.classList.add('in'); g.style.transition = 'none'
+    g.querySelector('.ff-sway').style.animation = 'none'
     const wrap = el('g', { transform: 'translate(0,-3)' }, s)
     wrap.appendChild(g)
   }, [kind, lv, sc])
@@ -365,12 +435,26 @@ const MILE_ICONS = {
   ),
 }
 
+// Ambient life per grove: fireflies at night, drifting petals and a bird by
+// day. Plain HTML spans over the SVG — GPU-composited, so none of it re-runs
+// the painterly filters. Deterministic per grove, so re-renders don't reshuffle.
+function ambientSpans(idx) {
+  const out = []
+  for (let i = 0; i < 6; i++) {
+    out.push({ t: 'fly', left: 8 + jitter(idx * 31 + i + 40) * 84, top: 46 + jitter(idx * 31 + i + 80) * 34, delay: jitter(idx * 31 + i + 120) * 4, dur: 3.4 + jitter(idx * 31 + i + 160) * 2.4 })
+  }
+  for (let i = 0; i < 6; i++) {
+    out.push({ t: 'petal', left: 5 + jitter(idx * 47 + i + 200) * 90, delay: -jitter(idx * 47 + i + 240) * 16, dur: 13 + jitter(idx * 47 + i + 280) * 7, pink: i % 2 === 0 })
+  }
+  return out
+}
+
 function Grove({ monthKey: key, sessions, idx, earnedHere, whisperText }) {
   const svgRef = useRef(null)
   const tipRef = useRef(null)
   useEffect(() => {
-    renderGroveSvg(svgRef.current, tipRef.current, sessions, 'g' + idx, idx * 57, earnedHere)
-  }, [sessions, idx, earnedHere])
+    renderGroveSvg(svgRef.current, tipRef.current, sessions, 'g' + idx, idx * 57, earnedHere, key)
+  }, [sessions, idx, earnedHere, key])
   const hrs = sessions.reduce((a, s) => a + durationMin(s), 0) / 60
   const scored = sessions.filter((s) => s.avg_align != null)
   const avg = scored.length
@@ -380,6 +464,14 @@ function Grove({ monthKey: key, sessions, idx, earnedHere, whisperText }) {
     <section className={`ff-grove ${seasonClass(key)}`} data-key={key}>
       <div className="relative">
         <svg ref={svgRef} viewBox="0 0 1000 520" role="img" aria-label={`The ${monthLabel(key)} grove`} />
+        <div className="ff-ambient" aria-hidden="true">
+          {ambientSpans(idx).map((a, i) => a.t === 'fly'
+            ? <span key={i} className="ff-fly" style={{ left: `${a.left}%`, top: `${a.top}%`, animationDelay: `${a.delay.toFixed(2)}s`, animationDuration: `${a.dur.toFixed(2)}s` }} />
+            : <span key={i} className="ff-petal" style={{ left: `${a.left}%`, animationDelay: `${a.delay.toFixed(2)}s`, animationDuration: `${a.dur.toFixed(2)}s`, background: a.pink ? 'var(--ff-cherry-0)' : 'var(--ff-leaf-0)' }} />)}
+          <span className="ff-bird" style={{ animationDelay: `${-(idx * 13)}s` }}>
+            <svg width="20" height="9" viewBox="0 0 20 9"><path d="M1 7 Q5.5 1 10 6 Q14.5 1 19 7" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+          </span>
+        </div>
         <div ref={tipRef} className="ff-tip" />
       </div>
       <div className="px-5 py-4">
@@ -402,19 +494,27 @@ export default function ForestPanel() {
   const [error, setError] = useState(null)
   const scrollerRef = useRef(null)
   const [activeKey, setActiveKey] = useState(null)
+  const lastJson = useRef('')
 
   useEffect(() => {
     let alive = true
+    // Only adopt a poll result that actually changed — a fresh-but-identical
+    // array every 60s would re-render every grove for nothing.
     const load = () =>
       fetchSessions()
-        .then((rows) => { if (alive) { setSessions(rows); setError(null) } })
+        .then((rows) => {
+          if (!alive) return
+          const j = JSON.stringify(rows)
+          if (j !== lastJson.current) { lastJson.current = j; setSessions(rows) }
+          setError(null)
+        })
         .catch((e) => { if (alive) setError(e.message) })
     load()
     const id = setInterval(load, 60000)
     return () => { alive = false; clearInterval(id) }
   }, [])
 
-  const { keys, byMonth, milestones } = useMemo(() => {
+  const { keys, byMonth, milestones, earnedByMonth } = useMemo(() => {
     const rows = (sessions || []).filter((s) => s.started_at && s.ended_at)
     rows.sort((a, b) => (a.started_at < b.started_at ? -1 : 1))
     const byMonth = new Map()
@@ -423,7 +523,18 @@ export default function ForestPanel() {
       if (!byMonth.has(k)) byMonth.set(k, [])
       byMonth.get(k).push(s)
     }
-    return { keys: [...byMonth.keys()], byMonth, milestones: computeMilestones(rows) }
+    const milestones = computeMilestones(rows)
+    // Landmark ids per grove, built HERE so each grove's array keeps a stable
+    // identity across re-renders — a fresh array per render made the grove
+    // effect refire (and the trees replay their grow-in) on every scroll tick.
+    const earnedByMonth = new Map()
+    for (const m of MILESTONES) {
+      const e = milestones.earned[m.id]
+      if (!e) continue
+      if (!earnedByMonth.has(e.month)) earnedByMonth.set(e.month, [])
+      earnedByMonth.get(e.month).push(m.id)
+    }
+    return { keys: [...byMonth.keys()], byMonth, milestones, earnedByMonth }
   }, [sessions])
 
   // Open on the newest grove, and keep the month chips in sync with scrolling.
@@ -531,7 +642,7 @@ export default function ForestPanel() {
             monthKey={k}
             sessions={byMonth.get(k)}
             idx={i}
-            earnedHere={MILESTONES.filter((m) => milestones.earned[m.id]?.month === k).map((m) => m.id)}
+            earnedHere={earnedByMonth.get(k) || EMPTY}
             whisperText={whisper(i, keys, byMonth)}
           />
         ))}
@@ -611,6 +722,8 @@ const FOREST_CSS = `
 .ff-root{
   --ff-sun-o:1; --ff-moon-o:0; --ff-stars-o:0; --ff-shaft-o:.5; --ff-mist-o:.5;
   --ff-hi-o:.2; --ff-lo-o:.12; --ff-shad-o:.14; --ff-lantern-glow:.25;
+  --ff-fly-o:0; --ff-petal-o:1;
+  --ff-treeline:#7FA073; --ff-bush:#7E9B63;
   --ff-trunk:#6E5843; --ff-fg-band:#6E9451;
   --ff-pond:#8FBECB; --ff-pond-hi:#C9E4E4; --ff-stone:#B9B3A2; --ff-wood:#8A6B4C;
   --ff-pine-0:#9CC4AE; --ff-pine-1:#5E9C7C; --ff-pine-2:#2F7256;
@@ -626,6 +739,8 @@ const FOREST_CSS = `
 .dark .ff-root{
   --ff-sun-o:0; --ff-moon-o:1; --ff-stars-o:.9; --ff-shaft-o:0; --ff-mist-o:.22;
   --ff-hi-o:.08; --ff-lo-o:.2; --ff-shad-o:.32; --ff-lantern-glow:1;
+  --ff-fly-o:1; --ff-petal-o:0;
+  --ff-treeline:#1D2D22; --ff-bush:#20301C;
   --ff-trunk:#55483A; --ff-fg-band:#141F0E;
   --ff-pond:#2A4A54; --ff-pond-hi:#476E74; --ff-stone:#4A473E; --ff-wood:#5B4632;
   --ff-pine-0:#48604F; --ff-pine-1:#528568; --ff-pine-2:#64B189;
@@ -650,8 +765,42 @@ const FOREST_CSS = `
 .ff-tree:hover .ff-grow,.ff-tree:focus-visible .ff-grow{filter:brightness(1.08) saturate(1.06)}
 .ff-grow{transform-box:fill-box; transform-origin:50% 100%; transform:scale(0)}
 .ff-grow.in{transform:scale(1); transition:transform .6s cubic-bezier(.34,1.5,.64,1)}
+.ff-grow.ff-instant{transition:none}
+.ff-sway{transform-box:fill-box; transform-origin:50% 100%; animation:ff-sway 7s ease-in-out infinite alternate}
+@keyframes ff-sway{from{transform:rotate(-.6deg)}to{transform:rotate(.6deg)}}
 .ff-drift{animation:ff-drift 90s ease-in-out infinite alternate}
 @keyframes ff-drift{from{transform:translateX(0)}to{transform:translateX(30px)}}
+.ff-mist{animation:ff-mist 46s ease-in-out infinite alternate}
+@keyframes ff-mist{from{transform:translateX(-16px)}to{transform:translateX(20px)}}
+.ff-ambient{position:absolute; inset:0; overflow:hidden; pointer-events:none}
+.ff-fly{
+  position:absolute; width:4px; height:4px; border-radius:50%;
+  background:#E8E081; opacity:0; box-shadow:0 0 7px 2px rgba(232,224,129,.55);
+  animation:ff-pulse 4.2s ease-in-out infinite;
+}
+@keyframes ff-pulse{
+  0%,100%{opacity:0; transform:translate(0,0)}
+  45%{opacity:calc(.9 * var(--ff-fly-o)); transform:translate(4px,-9px)}
+}
+.ff-petal{
+  position:absolute; top:-4%; width:7px; height:5px;
+  border-radius:60% 40% 55% 45%; opacity:0;
+  animation-name:ff-fall; animation-timing-function:linear; animation-iteration-count:infinite;
+}
+@keyframes ff-fall{
+  0%{opacity:0; transform:translate(0,-10px) rotate(0deg)}
+  7%{opacity:calc(.8 * var(--ff-petal-o))}
+  85%{opacity:calc(.45 * var(--ff-petal-o))}
+  100%{opacity:0; transform:translate(-90px,470px) rotate(310deg)}
+}
+.ff-bird{position:absolute; top:11%; left:0; color:#44523E; opacity:calc(.65 * var(--ff-petal-o)); animation:ff-flight 84s linear infinite}
+@keyframes ff-flight{
+  0%{transform:translate(-40px,0)}
+  10%{transform:translate(310px,-16px)}
+  20%{transform:translate(660px,4px)}
+  30%{transform:translate(1040px,-14px)}
+  30.001%,100%{transform:translate(1040px,-14px)}
+}
 .ff-pine-0{fill:var(--ff-pine-0)} .ff-pine-1{fill:var(--ff-pine-1)} .ff-pine-2{fill:var(--ff-pine-2)}
 .ff-leaf-0{fill:var(--ff-leaf-0)} .ff-leaf-1{fill:var(--ff-leaf-1)} .ff-leaf-2{fill:var(--ff-leaf-2)}
 .ff-maple-0{fill:var(--ff-maple-0)} .ff-maple-1{fill:var(--ff-maple-1)} .ff-maple-2{fill:var(--ff-maple-2)}
@@ -668,6 +817,7 @@ const FOREST_CSS = `
 .dark .ff-tip-m{color:#94a3b8}
 @media (prefers-reduced-motion: reduce){
   .ff-grow{transform:scale(1)} .ff-grow.in{transition:none}
-  .ff-drift{animation:none}
+  .ff-drift,.ff-sway,.ff-mist{animation:none}
+  .ff-ambient{display:none}
 }
 `
