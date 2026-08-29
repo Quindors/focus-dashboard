@@ -145,7 +145,12 @@ function drawBackdrop(svg, uid, seedOff) {
     const x = 90 + jitter(i + 1200 + seedOff) * 820
     tinyPine(midline, x, hillY(x, 500, 385, 480, 105) + 5, 0.2 + jitter(i + 1250 + seedOff) * 0.1)
   }
-  el('ellipse', { class: 'ff-mist', cx: 470, cy: 355, rx: 220, ry: 60, fill: '#FFFFFF', opacity: 'var(--ff-mist-o)', filter: `url(#soft${uid})` }, svg)
+  // Mist as thin wisps hugging the valley line — one tall ellipse read as a
+  // giant grey cloud parked over the scene, especially at night.
+  const mist = el('g', { class: 'ff-mist', opacity: 'var(--ff-mist-o)' }, svg)
+  el('ellipse', { cx: 340, cy: 374, rx: 250, ry: 12, fill: '#FFFFFF', opacity: '.7', filter: `url(#soft${uid})` }, mist)
+  el('ellipse', { cx: 585, cy: 382, rx: 210, ry: 10, fill: '#FFFFFF', opacity: '.55', filter: `url(#soft${uid})` }, mist)
+  el('ellipse', { cx: 460, cy: 391, rx: 300, ry: 13, fill: '#FFFFFF', opacity: '.45', filter: `url(#soft${uid})` }, mist)
   const ground = el('g', { filter: `url(#rough${uid})` }, svg)
   el('ellipse', { cx: 500, cy: 590, rx: 800, ry: 225, fill: 'var(--ff-ground)' }, ground)
   el('ellipse', { cx: 500, cy: 655, rx: 840, ry: 205, fill: 'var(--ff-ground-front)' }, ground)
@@ -737,7 +742,7 @@ const FOREST_CSS = `
 .ff-grove.ff-autumn{--ff-sky-top:#AFBCA4; --ff-sky-mid:#D6D3A8; --ff-sky-hor:#F0CE8E; --ff-ridge-far:#ADB794; --ff-ridge-mid:#8C9C64; --ff-ground:#A89B5A; --ff-ground-front:#93884C; --ff-flower:#E8B87E}
 .ff-grove.ff-winter{--ff-sky-top:#B7C7CD; --ff-sky-mid:#D7E0DC; --ff-sky-hor:#EFEBDD; --ff-ridge-far:#B4C3B4; --ff-ridge-mid:#93A995; --ff-ground:#A9BFA2; --ff-ground-front:#97AF90; --ff-flower:#F5F7F1}
 .dark .ff-root{
-  --ff-sun-o:0; --ff-moon-o:1; --ff-stars-o:.9; --ff-shaft-o:0; --ff-mist-o:.22;
+  --ff-sun-o:0; --ff-moon-o:1; --ff-stars-o:.9; --ff-shaft-o:0; --ff-mist-o:.08;
   --ff-hi-o:.08; --ff-lo-o:.2; --ff-shad-o:.32; --ff-lantern-glow:1;
   --ff-fly-o:1; --ff-petal-o:0;
   --ff-treeline:#1D2D22; --ff-bush:#20301C;
