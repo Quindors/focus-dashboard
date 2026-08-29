@@ -7,12 +7,12 @@ const PROTECTED = new Set(['ambiguous', 'system'])
 
 const PRODUCTIVITY = [
   { value: 'productive', label: 'Productive', is_productive: true },
-  { value: 'offtask', label: 'Off-task', is_productive: false },
+  { value: 'unproductive', label: 'Unproductive', is_productive: false },
   { value: 'neutral', label: 'Neutral', is_productive: null },
 ]
 
 function toValue(isProductive) {
-  return isProductive === true ? 'productive' : isProductive === false ? 'offtask' : 'neutral'
+  return isProductive === true ? 'productive' : isProductive === false ? 'unproductive' : 'neutral'
 }
 
 function toFlag(value) {
@@ -28,7 +28,7 @@ function ProductivitySelect({ value, onChange, disabled }) {
   const tone =
     value === 'productive'
       ? 'text-emerald-600 dark:text-emerald-400'
-      : value === 'offtask'
+      : value === 'unproductive'
         ? 'text-red-500 dark:text-red-400'
         : 'text-slate-500 dark:text-slate-400'
   return (

@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useFocusData } from './hooks/useFocusData'
-import { fetchMode, saveMode, isLocal } from './lib/dataSource'
 import { useTheme } from './theme'
 import TodayCard from './components/TodayCard'
 import CategoryBreakdown from './components/CategoryBreakdown'
 import WeeklyChart from './components/WeeklyChart'
 import ReviewPanel from './components/ReviewPanel'
+import CorrectionsPanel from './components/CorrectionsPanel'
 import CategoriesPanel from './components/CategoriesPanel'
 import IntentionCard from './components/IntentionCard'
 import BeeminderCard from './components/BeeminderCard'
+import ForestPanel from './components/ForestPanel'
 
 function TabBar({ tab, setTab }) {
   const tabs = [
     { id: 'overview', label: 'Overview' },
+    { id: 'forest', label: 'Forest' },
     { id: 'review', label: 'Review' },
     { id: 'categories', label: 'Categories' },
   ]
@@ -29,63 +31,6 @@ function TabBar({ tab, setTab }) {
           }`}
         >
           {t.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-// Monitor mode switch: distraction-free (alerts on) vs time tracking (log
-// only). The mode lives on the machine running the monitor, so this only
-// renders in local mode, and stays hidden until the API answers.
-function ModeToggle() {
-  const [mode, setMode] = useState(null)
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (!isLocal) return
-    let alive = true
-    const load = () =>
-      fetchMode().then((m) => { if (alive) setMode(m) }).catch(() => {})
-    load()
-    // keep in sync if the mode is changed elsewhere (another tab, tray)
-    const id = setInterval(load, 15000)
-    return () => { alive = false; clearInterval(id) }
-  }, [])
-
-  if (!isLocal || !mode) return null
-
-  const pick = async (m) => {
-    if (m === mode || saving) return
-    const prev = mode
-    setMode(m)
-    setSaving(true)
-    try {
-      await saveMode(m)
-    } catch {
-      setMode(prev) // monitor unreachable — roll back
-    }
-    setSaving(false)
-  }
-
-  const options = [
-    { id: 'distraction_free', label: 'Focus', title: 'Distraction-free: off-task alerts are on' },
-    { id: 'time_tracking', label: 'Tracking', title: 'Time tracking only: no alerts' },
-  ]
-  return (
-    <div className="flex gap-1 rounded-lg bg-slate-200/70 dark:bg-slate-800 p-1" role="group" aria-label="Monitor mode">
-      {options.map((o) => (
-        <button
-          key={o.id}
-          onClick={() => pick(o.id)}
-          title={o.title}
-          className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-            mode === o.id
-              ? 'bg-emerald-500 text-white shadow-sm'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-          }`}
-        >
-          {o.label}
         </button>
       ))}
     </div>
@@ -142,7 +87,6 @@ function App() {
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
           <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-100">Focus Dashboard</h1>
           <div className="flex items-center gap-4">
-            <ModeToggle />
             <TabBar tab={tab} setTab={setTab} />
             <LastUpdated at={lastUpdated} />
             <ThemeToggle />
@@ -167,7 +111,14 @@ function App() {
           </>
         )}
 
-        {tab === 'review' && <ReviewPanel />}
+        {tab === 'forest' && <ForestPanel />}
+
+        {tab === 'review' && (
+          <>
+            <ReviewPanel />
+            <CorrectionsPanel />
+          </>
+        )}
 
         {tab === 'categories' && <CategoriesPanel />}
       </div>

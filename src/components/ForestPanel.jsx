@@ -1,0 +1,673 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { fetchSessions } from '../lib/dataSource'
+
+// The forest tab: every finished session (completed or expired — the same set
+// Beeminder counts) is a tree, planted in the grove of the month it happened.
+// Species = category, size = duration, foliage depth = mean ALIGN. Abandoned
+// sessions never appear: the forest is purely positive, punishment stays
+// Beeminder's job. Rendering is imperative SVG (turbulence-displaced shapes
+// for a painterly look) driven entirely by CSS variables, so the dashboard's
+// .dark class flips the scenes to night without re-rendering.
+
+const KINDS = {
+  'Deep Work': 'pine',
+  'Homework': 'leaf',
+  'Research & Learning': 'maple',
+  'Communication': 'cherry',
+}
+const SPECIES_LABELS = [
+  ['pine', 'Deep Work'],
+  ['leaf', 'Homework'],
+  ['maple', 'Research & Learning'],
+  ['cherry', 'Communication'],
+  ['other', 'Everything else'],
+]
+const kindFor = (cat) => KINDS[cat] || 'other'
+
+// Milestones are cumulative over the whole forest; each earned one becomes a
+// permanent landmark in the grove of the month it was reached.
+const MILESTONES = [
+  { id: 'pond', name: 'The pond', what: '25th tree', test: (c) => c.count >= 25 },
+  { id: 'lantern', name: 'The lantern', what: '30 hours', test: (c) => c.hours >= 30 },
+  { id: 'bench', name: 'The bench', what: '40th tree', test: (c) => c.count >= 40 },
+  { id: 'cabin', name: 'The cabin', what: '100th tree', test: (c) => c.count >= 100, left: (s) => `${100 - s.count} trees away`, pct: (s) => s.count },
+  { id: 'falls', name: 'The falls', what: '100 hours', test: (c) => c.hours >= 100, left: (s) => `${Math.ceil(100 - s.hours)} hours away`, pct: (s) => s.hours },
+]
+
+const NS = 'http://www.w3.org/2000/svg'
+function el(n, a, parent) {
+  const e = document.createElementNS(NS, n)
+  for (const k in a) e.setAttribute(k, a[k])
+  if (parent) parent.appendChild(e)
+  return e
+}
+const jitter = (i) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.545; return x - Math.floor(x) }
+const lush = (a) => (a == null ? 1 : a >= 0.85 ? 2 : a >= 0.7 ? 1 : 0)
+const pts = (arr, sc) => arr.map((p) => `${p[0] * sc},${p[1] * sc}`).join(' ')
+
+const parseTs = (s) => new Date(String(s).replace(' ', 'T'))
+function durationMin(s) {
+  const a = parseTs(s.started_at), b = parseTs(s.ended_at || s.started_at)
+  const m = Math.round((b - a) / 60000)
+  return Number.isFinite(m) && m > 0 ? m : 0
+}
+const monthKey = (s) => String(s.started_at).slice(0, 7)
+function monthLabel(key) {
+  const [y, m] = key.split('-').map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
+function seasonClass(key) {
+  const m = Number(key.split('-')[1])
+  if (m >= 3 && m <= 5) return 'ff-spring'
+  if (m >= 6 && m <= 8) return 'ff-summer'
+  if (m >= 9 && m <= 11) return 'ff-autumn'
+  return 'ff-winter'
+}
+const fmtDate = (s) =>
+  parseTs(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+
+function defsFor(svg, uid) {
+  const defs = el('defs', {}, svg)
+  const sky = el('linearGradient', { id: 'sky' + uid, x1: 0, y1: 0, x2: 0, y2: 1 }, defs)
+  ;[['0%', '--ff-sky-top'], ['52%', '--ff-sky-mid'], ['100%', '--ff-sky-hor']].forEach(([o, v]) => {
+    el('stop', { offset: o }, sky).style.stopColor = `var(${v})`
+  })
+  const glow = el('radialGradient', { id: 'glow' + uid }, defs)
+  const g1 = el('stop', { offset: '0%' }, glow); g1.style.stopColor = '#FFEAA6'; g1.style.stopOpacity = '.85'
+  const g2 = el('stop', { offset: '100%' }, glow); g2.style.stopColor = '#FFEAA6'; g2.style.stopOpacity = '0'
+  const mg = el('radialGradient', { id: 'mglow' + uid }, defs)
+  const m1 = el('stop', { offset: '0%' }, mg); m1.style.stopColor = '#DCE6C8'; m1.style.stopOpacity = '.55'
+  const m2 = el('stop', { offset: '100%' }, mg); m2.style.stopColor = '#DCE6C8'; m2.style.stopOpacity = '0'
+  const lg = el('radialGradient', { id: 'lglow' + uid }, defs)
+  const l1 = el('stop', { offset: '0%' }, lg); l1.style.stopColor = '#FFD98A'; l1.style.stopOpacity = '.8'
+  const l2 = el('stop', { offset: '100%' }, lg); l2.style.stopColor = '#FFD98A'; l2.style.stopOpacity = '0'
+  const rough = el('filter', { id: 'rough' + uid, x: '-20%', y: '-20%', width: '140%', height: '140%' }, defs)
+  el('feTurbulence', { type: 'fractalNoise', baseFrequency: '0.012 0.024', numOctaves: '2', seed: '7', result: 'n' }, rough)
+  el('feDisplacementMap', { in: 'SourceGraphic', in2: 'n', scale: '10' }, rough)
+  const roughT = el('filter', { id: 'rt' + uid, x: '-30%', y: '-30%', width: '160%', height: '160%' }, defs)
+  el('feTurbulence', { type: 'fractalNoise', baseFrequency: '0.05 0.06', numOctaves: '2', seed: '3', result: 'n' }, roughT)
+  el('feDisplacementMap', { in: 'SourceGraphic', in2: 'n', scale: '5' }, roughT)
+  const soft = el('filter', { id: 'soft' + uid, x: '-60%', y: '-60%', width: '220%', height: '220%' }, defs)
+  el('feGaussianBlur', { stdDeviation: '7' }, soft)
+}
+
+function drawBackdrop(svg, uid, seedOff) {
+  el('rect', { x: 0, y: 0, width: 1000, height: 520, fill: `url(#sky${uid})` }, svg)
+  const stars = el('g', { opacity: 'var(--ff-stars-o)' }, svg)
+  for (let i = 0; i < 40; i++) {
+    el('circle', {
+      cx: (jitter(i + 300 + seedOff) * 980 + 10).toFixed(0),
+      cy: (jitter(i + 500 + seedOff) * 250 + 8).toFixed(0),
+      r: (0.7 + jitter(i + 700 + seedOff) * 0.9).toFixed(2),
+      fill: '#EDF2E0', opacity: (0.4 + jitter(i + 900 + seedOff) * 0.6).toFixed(2),
+    }, stars)
+  }
+  const sun = el('g', { opacity: 'var(--ff-sun-o)' }, svg)
+  el('circle', { cx: 850, cy: 96, r: 110, fill: `url(#glow${uid})` }, sun)
+  el('circle', { cx: 850, cy: 96, r: 34, fill: '#F8DC96' }, sun)
+  const moon = el('g', { opacity: 'var(--ff-moon-o)' }, svg)
+  el('circle', { cx: 850, cy: 96, r: 80, fill: `url(#mglow${uid})` }, moon)
+  el('circle', { cx: 850, cy: 96, r: 27, fill: '#E9E4CB' }, moon)
+  el('circle', { cx: 861, cy: 88, r: 23, fill: 'var(--ff-sky-top)' }, moon)
+  ;[[170, 100, 64, 0], [520, 66, 48, 1], [730, 140, 55, 2]].forEach((c) => {
+    const g = el('g', { class: 'ff-drift', opacity: '.8' }, svg)
+    g.style.animationDelay = -c[3] * 30 + 's'
+    el('ellipse', { cx: c[0], cy: c[1], rx: c[2], ry: 14, fill: '#FDFEF6', opacity: '.55', filter: `url(#soft${uid})` }, g)
+    el('ellipse', { cx: c[0] + 26, cy: c[1] - 10, rx: c[2] * 0.55, ry: 11, fill: '#FDFEF6', opacity: '.45', filter: `url(#soft${uid})` }, g)
+  })
+  const ridges = el('g', { filter: `url(#rough${uid})` }, svg)
+  el('ellipse', { cx: 180, cy: 352, rx: 380, ry: 110, fill: 'var(--ff-ridge-far)', opacity: '.8' }, ridges)
+  el('ellipse', { cx: 840, cy: 358, rx: 400, ry: 120, fill: 'var(--ff-ridge-far)', opacity: '.8' }, ridges)
+  el('ellipse', { cx: 500, cy: 385, rx: 480, ry: 105, fill: 'var(--ff-ridge-mid)' }, ridges)
+  el('ellipse', { cx: 470, cy: 355, rx: 220, ry: 60, fill: '#FFFFFF', opacity: 'var(--ff-mist-o)', filter: `url(#soft${uid})` }, svg)
+  const ground = el('g', { filter: `url(#rough${uid})` }, svg)
+  el('ellipse', { cx: 500, cy: 590, rx: 800, ry: 225, fill: 'var(--ff-ground)' }, ground)
+  el('ellipse', { cx: 500, cy: 655, rx: 840, ry: 205, fill: 'var(--ff-ground-front)' }, ground)
+  const shafts = el('g', { opacity: 'var(--ff-shaft-o)' }, svg)
+  el('polygon', { points: '820,90 878,90 700,520 560,520', fill: '#FFF3C4', opacity: '.3', filter: `url(#soft${uid})` }, shafts)
+  el('polygon', { points: '860,100 900,104 980,520 850,520', fill: '#FFF3C4', opacity: '.22', filter: `url(#soft${uid})` }, shafts)
+  const flowers = el('g', {}, svg)
+  for (let i = 0; i < 26; i++) {
+    el('circle', {
+      cx: (20 + jitter(i + 20 + seedOff) * 960).toFixed(0),
+      cy: (392 + jitter(i + 60 + seedOff) * 112).toFixed(0),
+      r: (1.5 + jitter(i + 140 + seedOff) * 1.3).toFixed(2),
+      fill: 'var(--ff-flower)', opacity: '.9',
+    }, flowers)
+  }
+}
+
+function drawTree(kind, lv, sc, uid) {
+  const g = el('g', { class: 'ff-grow' })
+  const f = `ff-${kind}-${lv}`
+  if (uid) el('ellipse', { cx: 2 * sc, cy: 1, rx: 18 * sc, ry: 4 * sc, fill: '#000', opacity: 'var(--ff-shad-o)', filter: `url(#soft${uid})` }, g)
+  const inner = uid ? el('g', { filter: `url(#rt${uid})` }, g) : el('g', {}, g)
+  el('polygon', { points: pts([[-3.6, 0], [3.6, 0], [2.4, -19], [-2.4, -19]], sc), fill: 'var(--ff-trunk)' }, inner)
+  if (kind === 'pine') {
+    el('polygon', { points: pts([[-20, -10], [20, -10], [0, -44]], sc), class: f }, inner)
+    el('polygon', { points: pts([[-16, -29], [16, -29], [0, -58]], sc), class: f }, inner)
+    el('polygon', { points: pts([[-10, -46], [10, -46], [0, -71]], sc), class: f }, inner)
+    el('polygon', { points: pts([[-16, -29], [0, -29], [0, -58]], sc), fill: '#fff', opacity: 'var(--ff-hi-o)' }, inner)
+  } else if (kind === 'leaf' || kind === 'other') {
+    el('circle', { cx: 0, cy: -40 * sc, r: 23 * sc, class: f }, inner)
+    el('circle', { cx: -13 * sc, cy: -29 * sc, r: 13 * sc, class: f }, inner)
+    el('circle', { cx: 13 * sc, cy: -29 * sc, r: 13 * sc, class: f }, inner)
+    el('circle', { cx: -8 * sc, cy: -47 * sc, r: 10 * sc, fill: '#fff', opacity: 'var(--ff-hi-o)' }, inner)
+    el('circle', { cx: 10 * sc, cy: -30 * sc, r: 9 * sc, fill: '#000', opacity: 'var(--ff-lo-o)' }, inner)
+  } else if (kind === 'maple') {
+    el('circle', { cx: -13 * sc, cy: -31 * sc, r: 14 * sc, class: f }, inner)
+    el('circle', { cx: 13 * sc, cy: -31 * sc, r: 14 * sc, class: f }, inner)
+    el('circle', { cx: 0, cy: -46 * sc, r: 17 * sc, class: f }, inner)
+    el('circle', { cx: -6 * sc, cy: -50 * sc, r: 8 * sc, fill: '#fff', opacity: 'var(--ff-hi-o)' }, inner)
+    el('circle', { cx: 11 * sc, cy: -29 * sc, r: 8 * sc, fill: '#000', opacity: 'var(--ff-lo-o)' }, inner)
+  } else {
+    el('ellipse', { cx: 0, cy: -27 * sc, rx: 20 * sc, ry: 15 * sc, class: f }, inner)
+    el('circle', { cx: -11 * sc, cy: -36 * sc, r: 7 * sc, class: f }, inner)
+    el('circle', { cx: 11 * sc, cy: -33 * sc, r: 6 * sc, class: f }, inner)
+    el('circle', { cx: -6 * sc, cy: -33 * sc, r: 6 * sc, fill: '#fff', opacity: 'var(--ff-hi-o)' }, inner)
+    el('circle', { cx: 9 * sc, cy: -23 * sc, r: 6 * sc, fill: '#000', opacity: 'var(--ff-lo-o)' }, inner)
+  }
+  return g
+}
+
+function drawLandmark(svg, uid, id, x, y) {
+  const g = el('g', { transform: `translate(${x},${y})` }, svg)
+  if (id === 'pond') {
+    const p = el('g', { filter: `url(#rough${uid})` }, g)
+    el('ellipse', { cx: 0, cy: 0, rx: 74, ry: 20, fill: 'var(--ff-pond)' }, p)
+    el('ellipse', { cx: -14, cy: -3, rx: 34, ry: 8, fill: 'var(--ff-pond-hi)', opacity: '.55' }, p)
+    ;[[-78, -6], [-66, -14], [80, -4]].forEach((r) => {
+      el('polygon', { points: `${r[0]},${r[1]} ${r[0] + 2},${r[1] - 16} ${r[0] + 4},${r[1]}`, fill: 'var(--ff-pine-1)' }, g)
+    })
+  } else if (id === 'lantern') {
+    el('circle', { cx: 0, cy: -22, r: 30, fill: `url(#lglow${uid})`, opacity: 'var(--ff-lantern-glow)' }, g)
+    el('rect', { x: -9, y: -6, width: 18, height: 6, rx: 2, fill: 'var(--ff-stone)' }, g)
+    el('rect', { x: -4, y: -18, width: 8, height: 12, fill: 'var(--ff-stone)' }, g)
+    el('rect', { x: -11, y: -26, width: 22, height: 8, rx: 3, fill: 'var(--ff-stone)' }, g)
+    el('rect', { x: -6, y: -33, width: 12, height: 7, rx: 2, fill: 'var(--ff-stone)' }, g)
+    el('circle', { cx: 0, cy: -22, r: 3, fill: '#FFD98A' }, g)
+  } else if (id === 'bench') {
+    el('rect', { x: -20, y: -12, width: 40, height: 4, rx: 2, fill: 'var(--ff-wood)' }, g)
+    el('rect', { x: -20, y: -22, width: 40, height: 4, rx: 2, fill: 'var(--ff-wood)' }, g)
+    el('rect', { x: -16, y: -12, width: 4, height: 12, fill: 'var(--ff-wood)' }, g)
+    el('rect', { x: 12, y: -12, width: 4, height: 12, fill: 'var(--ff-wood)' }, g)
+  } else if (id === 'cabin') {
+    el('polygon', { points: '-26,-24 26,-24 0,-46', fill: 'var(--ff-wood)' }, g)
+    el('rect', { x: -20, y: -24, width: 40, height: 24, fill: 'var(--ff-stone)' }, g)
+    el('rect', { x: -6, y: -14, width: 12, height: 14, fill: 'var(--ff-wood)' }, g)
+    el('circle', { cx: 12, cy: -18, r: 4, fill: '#FFD98A', opacity: 'var(--ff-lantern-glow)' }, g)
+  } else if (id === 'falls') {
+    el('rect', { x: -8, y: -52, width: 16, height: 40, rx: 5, fill: 'var(--ff-pond-hi)', opacity: '.8' }, g)
+    el('ellipse', { cx: 0, cy: -6, rx: 26, ry: 9, fill: 'var(--ff-pond)' }, g)
+  }
+}
+
+// Tooltip content is built with textContent (never innerHTML): intention text
+// is user data.
+function fillTip(tip, s, kind) {
+  tip.replaceChildren()
+  const t = document.createElement('p'); t.className = 'ff-tip-t'
+  const dot = document.createElement('span'); dot.className = 'ff-tip-dot'
+  dot.style.background = `var(--ff-${kind}-1)`
+  t.appendChild(dot); t.appendChild(document.createTextNode(s.text))
+  const m1 = document.createElement('p'); m1.className = 'ff-tip-m'
+  m1.textContent = `${s.llm_category || 'Uncategorized'} · ${fmtDate(s.started_at)}`
+  const m2 = document.createElement('p'); m2.className = 'ff-tip-m'
+  const alignTxt = s.avg_align == null ? 'ALIGN —' : `ALIGN ${Math.round(s.avg_align * 100)}%`
+  m2.textContent = `${durationMin(s)} min · ${alignTxt}`
+  tip.append(t, m1, m2)
+}
+
+function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere) {
+  svg.replaceChildren()
+  defsFor(svg, uid)
+  drawBackdrop(svg, uid, seedOff)
+  const spots = { pond: [190, 485], lantern: [880, 470], bench: [120, 455], cabin: [860, 500], falls: [140, 500] }
+  earnedHere.forEach((id) => drawLandmark(svg, uid, id, ...(spots[id] || [500, 470])))
+  const rows = [{ y: 408, s: 0.55 }, { y: 452, s: 0.75 }, { y: 498, s: 1 }]
+  const third = Math.ceil(sessions.length / 3) || 1
+  const buckets = [[], [], []]
+  sessions.forEach((s, i) => buckets[Math.min(Math.floor(i / third), 2)].push([s, i]))
+  buckets.forEach((bucket, bi) => {
+    const row = rows[bi]
+    bucket.forEach(([s, gi], i) => {
+      const n = bucket.length
+      const x = n === 1 ? 500 : 90 + (820 / (n - 1)) * i + (jitter(gi + seedOff) - 0.5) * 30
+      const mins = durationMin(s)
+      const sc = row.s * (0.6 + (Math.min(mins, 120) / 120) * 0.68)
+      const kind = kindFor(s.llm_category)
+      const t = el('g', {
+        class: 'ff-tree', transform: `translate(${x.toFixed(1)},${row.y})`, tabindex: '0',
+        'aria-label': `${s.text}, ${s.llm_category || 'uncategorized'}, ${mins} minutes`,
+      }, svg)
+      const body = drawTree(kind, lush(s.avg_align), sc, uid)
+      t.appendChild(body)
+      const show = () => {
+        fillTip(tip, s, kind)
+        tip.style.display = 'block'
+        const r = svg.getBoundingClientRect()
+        const px = (x / 1000) * r.width, py = (row.y / 520) * r.height
+        tip.style.left = Math.min(Math.max(px - 100, 8), r.width - 260) + 'px'
+        tip.style.top = Math.max(py - 128, 8) + 'px'
+      }
+      const hide = () => { tip.style.display = 'none' }
+      t.addEventListener('pointerenter', show)
+      t.addEventListener('focus', show)
+      t.addEventListener('pointerleave', hide)
+      t.addEventListener('blur', hide)
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        body.style.transitionDelay = Math.min(gi * 30, 900) + 'ms'
+        body.classList.add('in')
+      }))
+    })
+  })
+  el('ellipse', { cx: 500, cy: 600, rx: 860, ry: 110, fill: 'var(--ff-fg-band)', opacity: '.85', filter: `url(#rough${uid})` }, svg)
+}
+
+// A data-derived personal line for a grove. In time these could come from the
+// model that already scores the sessions — for now they are honest arithmetic.
+function whisper(idx, keys, byMonth) {
+  const key = keys[idx]
+  const data = byMonth.get(key)
+  if (!data?.length) return ''
+  const longest = data.reduce((a, s) => (durationMin(s) > durationMin(a) ? s : a), data[0])
+  const scored = data.filter((s) => s.avg_align != null)
+  const cleanest = scored.length ? scored.reduce((a, s) => (s.avg_align > a.avg_align ? s : a), scored[0]) : null
+  const hrs = data.reduce((a, s) => a + durationMin(s), 0) / 60
+  const prev = idx > 0 ? byMonth.get(keys[idx - 1]) : null
+  const prevHrs = prev ? prev.reduce((a, s) => a + durationMin(s), 0) / 60 : 0
+  const options = [
+    `Your longest sit here: ${durationMin(longest)} minutes on “${longest.text}.”`,
+    cleanest
+      ? `“${cleanest.text}” ran at ${Math.round(cleanest.avg_align * 100)}% align — your cleanest hour of the month.`
+      : `The tallest tree here grew from “${longest.text}.”`,
+    prev && hrs > prevHrs
+      ? `${(hrs - prevHrs).toFixed(1)} hours deeper than ${monthLabel(keys[idx - 1]).split(' ')[0]}. The grove is thickening.`
+      : `The tallest tree here grew from “${longest.text}.”`,
+  ]
+  return options[idx % options.length]
+}
+
+function computeMilestones(sessions) {
+  const sorted = [...sessions].sort((a, b) => (a.started_at < b.started_at ? -1 : 1))
+  let count = 0, hours = 0
+  const earned = {}
+  for (const s of sorted) {
+    count++; hours += durationMin(s) / 60
+    for (const m of MILESTONES) {
+      if (!earned[m.id] && m.test({ count, hours })) {
+        earned[m.id] = { date: s.started_at, month: monthKey(s) }
+      }
+    }
+  }
+  return { earned, count, hours }
+}
+
+function bestStreak(sessions) {
+  const days = [...new Set(sessions.map((s) => String(s.started_at).slice(0, 10)))].sort()
+  let best = 0, run = 0, prev = null
+  for (const d of days) {
+    run = prev && parseTs(d + ' 00:00:00') - parseTs(prev + ' 00:00:00') === 86400000 ? run + 1 : 1
+    best = Math.max(best, run); prev = d
+  }
+  return best
+}
+
+function Mini({ kind, lv, sc, w, h }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const s = ref.current
+    s.replaceChildren()
+    const g = drawTree(kind, lv, sc, null)
+    g.classList.add('in'); g.style.transition = 'none'
+    const wrap = el('g', { transform: 'translate(0,-3)' }, s)
+    wrap.appendChild(g)
+  }, [kind, lv, sc])
+  return <svg ref={ref} viewBox={`${-w / 2} ${-h} ${w} ${h}`} width={w} height={h} aria-hidden="true" />
+}
+
+const MILE_ICONS = {
+  pond: (
+    <svg width="26" height="18" viewBox="0 0 26 18" aria-hidden="true">
+      <ellipse cx="13" cy="11" rx="11" ry="5" fill="var(--ff-pond)" />
+      <ellipse cx="10" cy="10" rx="5" ry="1.8" fill="var(--ff-pond-hi)" />
+    </svg>
+  ),
+  lantern: (
+    <svg width="16" height="22" viewBox="0 0 16 22" aria-hidden="true">
+      <rect x="3" y="16" width="10" height="3" rx="1" fill="var(--ff-stone)" />
+      <rect x="6" y="9" width="4" height="7" fill="var(--ff-stone)" />
+      <rect x="2" y="5" width="12" height="4" rx="1.5" fill="var(--ff-stone)" />
+      <rect x="5" y="1" width="6" height="4" rx="1" fill="var(--ff-stone)" />
+      <circle cx="8" cy="7" r="1.6" fill="#FFD98A" />
+    </svg>
+  ),
+  bench: (
+    <svg width="24" height="16" viewBox="0 0 24 16" aria-hidden="true">
+      <rect x="2" y="3" width="20" height="2.6" rx="1" fill="var(--ff-wood)" />
+      <rect x="2" y="8" width="20" height="2.6" rx="1" fill="var(--ff-wood)" />
+      <rect x="4" y="8" width="2.4" height="7" fill="var(--ff-wood)" />
+      <rect x="17.6" y="8" width="2.4" height="7" fill="var(--ff-wood)" />
+    </svg>
+  ),
+  cabin: (
+    <svg width="22" height="20" viewBox="0 0 22 20" aria-hidden="true">
+      <polygon points="11,1 21,9 1,9" fill="var(--ff-wood)" />
+      <rect x="4" y="9" width="14" height="9" fill="var(--ff-stone)" />
+      <rect x="9" y="12" width="4" height="6" fill="var(--ff-wood)" />
+    </svg>
+  ),
+  falls: (
+    <svg width="18" height="20" viewBox="0 0 18 20" aria-hidden="true">
+      <rect x="6" y="1" width="6" height="13" rx="2" fill="var(--ff-pond-hi)" />
+      <ellipse cx="9" cy="16" rx="8" ry="3.4" fill="var(--ff-pond)" />
+    </svg>
+  ),
+}
+
+function Grove({ monthKey: key, sessions, idx, earnedHere, whisperText }) {
+  const svgRef = useRef(null)
+  const tipRef = useRef(null)
+  useEffect(() => {
+    renderGroveSvg(svgRef.current, tipRef.current, sessions, 'g' + idx, idx * 57, earnedHere)
+  }, [sessions, idx, earnedHere])
+  const hrs = sessions.reduce((a, s) => a + durationMin(s), 0) / 60
+  const scored = sessions.filter((s) => s.avg_align != null)
+  const avg = scored.length
+    ? Math.round((scored.reduce((a, s) => a + s.avg_align, 0) / scored.length) * 100)
+    : null
+  return (
+    <section className={`ff-grove ${seasonClass(key)}`} data-key={key}>
+      <div className="relative">
+        <svg ref={svgRef} viewBox="0 0 1000 520" role="img" aria-label={`The ${monthLabel(key)} grove`} />
+        <div ref={tipRef} className="ff-tip" />
+      </div>
+      <div className="px-5 py-4">
+        <div className="flex justify-between items-baseline gap-3 flex-wrap">
+          <span className="text-lg font-semibold text-slate-800 dark:text-slate-100">{monthLabel(key)}</span>
+          <span className="text-sm text-slate-500 dark:text-slate-400 tabular-nums">
+            {sessions.length} trees · {hrs.toFixed(1)} h{avg != null ? ` · ${avg}% align` : ''}
+          </span>
+        </div>
+        {whisperText && (
+          <p className="mt-1 text-[15px] italic font-serif text-slate-500 dark:text-slate-400">{whisperText}</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
+export default function ForestPanel() {
+  const [sessions, setSessions] = useState(null)
+  const [error, setError] = useState(null)
+  const scrollerRef = useRef(null)
+  const [activeKey, setActiveKey] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    const load = () =>
+      fetchSessions()
+        .then((rows) => { if (alive) { setSessions(rows); setError(null) } })
+        .catch((e) => { if (alive) setError(e.message) })
+    load()
+    const id = setInterval(load, 60000)
+    return () => { alive = false; clearInterval(id) }
+  }, [])
+
+  const { keys, byMonth, milestones } = useMemo(() => {
+    const rows = (sessions || []).filter((s) => s.started_at && s.ended_at)
+    rows.sort((a, b) => (a.started_at < b.started_at ? -1 : 1))
+    const byMonth = new Map()
+    for (const s of rows) {
+      const k = monthKey(s)
+      if (!byMonth.has(k)) byMonth.set(k, [])
+      byMonth.get(k).push(s)
+    }
+    return { keys: [...byMonth.keys()], byMonth, milestones: computeMilestones(rows) }
+  }, [sessions])
+
+  // Open on the newest grove, and keep the month chips in sync with scrolling.
+  useEffect(() => {
+    const sc = scrollerRef.current
+    if (!sc || !keys.length) return
+    const last = sc.querySelector(`[data-key="${keys[keys.length - 1]}"]`)
+    last?.scrollIntoView({ inline: 'center', block: 'nearest' })
+    const mark = () => {
+      const mid = sc.scrollLeft + sc.clientWidth / 2
+      let bestKey = keys[0], bestDist = Infinity
+      sc.querySelectorAll('.ff-grove').forEach((s) => {
+        const d = Math.abs(s.offsetLeft + s.offsetWidth / 2 - mid)
+        if (d < bestDist) { bestDist = d; bestKey = s.dataset.key }
+      })
+      setActiveKey(bestKey)
+    }
+    mark()
+    const onScroll = () => requestAnimationFrame(mark)
+    sc.addEventListener('scroll', onScroll)
+    return () => sc.removeEventListener('scroll', onScroll)
+  }, [keys])
+
+  const jumpTo = (key) => {
+    scrollerRef.current
+      ?.querySelector(`[data-key="${key}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md">
+        <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Forest</h2>
+        <p className="text-red-600 dark:text-red-400">{error}</p>
+      </div>
+    )
+  }
+  if (sessions === null) {
+    return <p className="text-slate-500 dark:text-slate-400">Growing the forest…</p>
+  }
+  if (!keys.length) {
+    return (
+      <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-8 rounded-lg shadow-md text-center">
+        <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">The field is waiting</h2>
+        <p className="text-slate-500 dark:text-slate-400">
+          Declare an intention and finish the session — the first tree takes root the moment it ends.
+        </p>
+      </div>
+    )
+  }
+
+  const all = keys.flatMap((k) => byMonth.get(k))
+  const totalHrs = all.reduce((a, s) => a + durationMin(s), 0) / 60
+  const scored = all.filter((s) => s.avg_align != null)
+  const avgAlign = scored.length
+    ? Math.round((scored.reduce((a, s) => a + s.avg_align, 0) / scored.length) * 100)
+    : null
+  const firstDate = fmtDate(all[0].started_at)
+
+  const stats = [
+    { k: 'Trees standing', v: all.length, u: 'completed sessions' },
+    { k: 'Focused hours', v: totalHrs.toFixed(1), u: 'inside sessions' },
+    { k: 'Avg align', v: avgAlign != null ? `${avgAlign}%` : '—', u: 'time on intention' },
+    { k: 'Best streak', v: bestStreak(all), u: 'days in a row' },
+  ]
+
+  return (
+    <div className="ff-root">
+      <style>{FOREST_CSS}</style>
+
+      <p className="mb-4 text-[15px] italic font-serif text-slate-500 dark:text-slate-400">
+        {all.length} sessions since {firstDate} — every one of them is still standing.
+      </p>
+
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4 mb-5">
+        {stats.map((s) => (
+          <div key={s.k} className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-lg shadow-md px-4 py-3">
+            <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500">{s.k}</p>
+            <p className="text-2xl font-bold text-slate-800 dark:text-slate-100 tabular-nums">{s.v}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{s.u}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {keys.map((k) => (
+          <button
+            key={k}
+            onClick={() => jumpTo(k)}
+            className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+              activeKey === k
+                ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+            }`}
+          >
+            {monthLabel(k)}
+          </button>
+        ))}
+      </div>
+
+      <div ref={scrollerRef} className="ff-scroller">
+        {keys.map((k, i) => (
+          <Grove
+            key={k}
+            monthKey={k}
+            sessions={byMonth.get(k)}
+            idx={i}
+            earnedHere={MILESTONES.filter((m) => milestones.earned[m.id]?.month === k).map((m) => m.id)}
+            whisperText={whisper(i, keys, byMonth)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-6">
+        <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-3">
+          The land remembers
+        </h2>
+        <div className="flex gap-3 flex-wrap">
+          {MILESTONES.map((m) => {
+            const e = milestones.earned[m.id]
+            return (
+              <div key={m.id} className={`flex items-center gap-3 bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-lg shadow-md px-4 py-3 text-sm ${e ? '' : 'opacity-75'}`}>
+                {MILE_ICONS[m.id]}
+                <span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">{m.name}</span>
+                  <br />
+                  <span className="text-slate-500 dark:text-slate-400">
+                    {e ? `${m.what} · appeared ${fmtDate(e.date)}` : m.left ? m.left(milestones) : m.what}
+                  </span>
+                </span>
+                {!e && m.pct && (
+                  <span className="w-20 h-1.5 rounded bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                    <i className="block h-full bg-emerald-500 rounded" style={{ width: `${Math.min(m.pct(milestones), 100).toFixed(0)}%` }} />
+                  </span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3 mt-6">
+        <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-lg shadow-md p-4">
+          <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500 mb-2">Species is the category</p>
+          <div className="flex items-end gap-4 flex-wrap">
+            {SPECIES_LABELS.map(([kind, label]) => (
+              <div key={kind} className="flex flex-col items-center gap-0.5 text-xs text-slate-500 dark:text-slate-400">
+                <Mini kind={kind} lv={2} sc={0.52} w={46} h={46} />
+                {label}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-lg shadow-md p-4">
+          <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500 mb-2">Size is the duration</p>
+          <div className="flex items-end gap-4 flex-wrap">
+            {[[0.34, '30 min'], [0.52, '1 h'], [0.72, '2 h']].map(([sc, label]) => (
+              <div key={label} className="flex flex-col items-center gap-0.5 text-xs text-slate-500 dark:text-slate-400">
+                <Mini kind="leaf" lv={1} sc={sc} w={60} h={60} />
+                {label}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-lg shadow-md p-4">
+          <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500 mb-2">Lushness is the align score</p>
+          <div className="flex items-end gap-4 flex-wrap">
+            {[[0, 'under 70%'], [1, '70 to 85%'], [2, '85% and up']].map(([lv, label]) => (
+              <div key={label} className="flex flex-col items-center gap-0.5 text-xs text-slate-500 dark:text-slate-400">
+                <Mini kind="pine" lv={lv} sc={0.5} w={44} h={48} />
+                {label}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// All scene color comes from these variables, so the dashboard's .dark class
+// turns every grove to night without touching the SVG. Season classes only
+// re-tint daylight; night is night in every season.
+const FOREST_CSS = `
+.ff-root{
+  --ff-sun-o:1; --ff-moon-o:0; --ff-stars-o:0; --ff-shaft-o:.5; --ff-mist-o:.5;
+  --ff-hi-o:.2; --ff-lo-o:.12; --ff-shad-o:.14; --ff-lantern-glow:.25;
+  --ff-trunk:#6E5843; --ff-fg-band:#6E9451;
+  --ff-pond:#8FBECB; --ff-pond-hi:#C9E4E4; --ff-stone:#B9B3A2; --ff-wood:#8A6B4C;
+  --ff-pine-0:#9CC4AE; --ff-pine-1:#5E9C7C; --ff-pine-2:#2F7256;
+  --ff-leaf-0:#CCDF96; --ff-leaf-1:#8FB756; --ff-leaf-2:#5F8F2E;
+  --ff-maple-0:#E9C48A; --ff-maple-1:#D69A4B; --ff-maple-2:#B26F1F;
+  --ff-cherry-0:#EFC3D2; --ff-cherry-1:#DE8FAC; --ff-cherry-2:#C25E85;
+  --ff-other-0:#C2CDB2; --ff-other-1:#93A57F; --ff-other-2:#6A7F58;
+}
+.ff-grove.ff-spring{--ff-sky-top:#9FC6C2; --ff-sky-mid:#C8E0C3; --ff-sky-hor:#EEE8C2; --ff-ridge-far:#A6C2AE; --ff-ridge-mid:#79A47E; --ff-ground:#84B173; --ff-ground-front:#6FA061; --ff-flower:#F3CBD6}
+.ff-grove.ff-summer{--ff-sky-top:#98BFAE; --ff-sky-mid:#C6DDB9; --ff-sky-hor:#F2E1AC; --ff-ridge-far:#9CBAA0; --ff-ridge-mid:#76A06F; --ff-ground:#86AC62; --ff-ground-front:#739C52; --ff-flower:#FBF3D9}
+.ff-grove.ff-autumn{--ff-sky-top:#AFBCA4; --ff-sky-mid:#D6D3A8; --ff-sky-hor:#F0CE8E; --ff-ridge-far:#ADB794; --ff-ridge-mid:#8C9C64; --ff-ground:#A89B5A; --ff-ground-front:#93884C; --ff-flower:#E8B87E}
+.ff-grove.ff-winter{--ff-sky-top:#B7C7CD; --ff-sky-mid:#D7E0DC; --ff-sky-hor:#EFEBDD; --ff-ridge-far:#B4C3B4; --ff-ridge-mid:#93A995; --ff-ground:#A9BFA2; --ff-ground-front:#97AF90; --ff-flower:#F5F7F1}
+.dark .ff-root{
+  --ff-sun-o:0; --ff-moon-o:1; --ff-stars-o:.9; --ff-shaft-o:0; --ff-mist-o:.22;
+  --ff-hi-o:.08; --ff-lo-o:.2; --ff-shad-o:.32; --ff-lantern-glow:1;
+  --ff-trunk:#55483A; --ff-fg-band:#141F0E;
+  --ff-pond:#2A4A54; --ff-pond-hi:#476E74; --ff-stone:#4A473E; --ff-wood:#5B4632;
+  --ff-pine-0:#48604F; --ff-pine-1:#528568; --ff-pine-2:#64B189;
+  --ff-leaf-0:#5C6C41; --ff-leaf-1:#7E9E4C; --ff-leaf-2:#A0C75E;
+  --ff-maple-0:#7C6337; --ff-maple-1:#A8823D; --ff-maple-2:#D4A64C;
+  --ff-cherry-0:#6F4B58; --ff-cherry-1:#9E617B; --ff-cherry-2:#CC7C9E;
+  --ff-other-0:#4C5643; --ff-other-1:#67775A; --ff-other-2:#8AA07A;
+}
+.dark .ff-root .ff-grove{
+  --ff-sky-top:#0F1926; --ff-sky-mid:#132320; --ff-sky-hor:#25331F;
+  --ff-ridge-far:#1B2A24; --ff-ridge-mid:#1F3020; --ff-ground:#25361E;
+  --ff-ground-front:#1E2D18; --ff-flower:#394430;
+}
+.ff-scroller{display:flex; gap:20px; overflow-x:auto; scroll-snap-type:x mandatory; padding:4px 4px 8px; scrollbar-width:none}
+.ff-scroller::-webkit-scrollbar{display:none}
+.ff-grove{flex:0 0 min(92%,860px); scroll-snap-align:center; border-radius:16px; overflow:hidden; position:relative;
+  background:#fff; box-shadow:0 4px 6px -1px rgb(0 0 0/.1),0 2px 4px -2px rgb(0 0 0/.1)}
+.dark .ff-grove{background:#0f172a; border:1px solid #1e293b}
+.ff-grove svg{display:block; width:100%; height:auto}
+.ff-tree{cursor:pointer}
+.ff-tree:focus-visible{outline:none}
+.ff-tree:hover .ff-grow,.ff-tree:focus-visible .ff-grow{filter:brightness(1.08) saturate(1.06)}
+.ff-grow{transform-box:fill-box; transform-origin:50% 100%; transform:scale(0)}
+.ff-grow.in{transform:scale(1); transition:transform .6s cubic-bezier(.34,1.5,.64,1)}
+.ff-drift{animation:ff-drift 90s ease-in-out infinite alternate}
+@keyframes ff-drift{from{transform:translateX(0)}to{transform:translateX(30px)}}
+.ff-pine-0{fill:var(--ff-pine-0)} .ff-pine-1{fill:var(--ff-pine-1)} .ff-pine-2{fill:var(--ff-pine-2)}
+.ff-leaf-0{fill:var(--ff-leaf-0)} .ff-leaf-1{fill:var(--ff-leaf-1)} .ff-leaf-2{fill:var(--ff-leaf-2)}
+.ff-maple-0{fill:var(--ff-maple-0)} .ff-maple-1{fill:var(--ff-maple-1)} .ff-maple-2{fill:var(--ff-maple-2)}
+.ff-cherry-0{fill:var(--ff-cherry-0)} .ff-cherry-1{fill:var(--ff-cherry-1)} .ff-cherry-2{fill:var(--ff-cherry-2)}
+.ff-other-0{fill:var(--ff-other-0)} .ff-other-1{fill:var(--ff-other-1)} .ff-other-2{fill:var(--ff-other-2)}
+.ff-tip{position:absolute; display:none; z-index:3; pointer-events:none; max-width:250px;
+  background:#fff; border-radius:10px; padding:10px 14px; font-size:13px; line-height:1.5;
+  box-shadow:0 10px 15px -3px rgb(0 0 0/.15),0 4px 6px -4px rgb(0 0 0/.1); color:#1e293b}
+.dark .ff-tip{background:#0f172a; color:#e2e8f0; border:1px solid #1e293b}
+.ff-tip p{margin:0}
+.ff-tip-t{font-weight:700; display:flex; align-items:center; gap:6px; margin-bottom:2px}
+.ff-tip-dot{width:9px; height:9px; border-radius:50%; flex:none}
+.ff-tip-m{color:#64748b; font-variant-numeric:tabular-nums}
+.dark .ff-tip-m{color:#94a3b8}
+@media (prefers-reduced-motion: reduce){
+  .ff-grow{transform:scale(1)} .ff-grow.in{transition:none}
+  .ff-drift{animation:none}
+}
+`

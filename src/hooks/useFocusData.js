@@ -41,7 +41,7 @@ export function useFocusData(pollMs = 15000) {
         const counted = rows.filter(r => productiveMap[r.category_name] !== null
                                       && productiveMap[r.category_name] !== undefined)
         const productiveCount = counted.filter(r => productiveMap[r.category_name] === true).length
-        const offTaskCount = counted.filter(r => productiveMap[r.category_name] === false).length
+        const unproductiveCount = counted.filter(r => productiveMap[r.category_name] === false).length
 
         const today = {
           totalEvents: rows.length,                // all events, including System
@@ -50,8 +50,8 @@ export function useFocusData(pollMs = 15000) {
           productiveEvents: productiveCount,
           productivePct: counted.length === 0 ? 0 : Math.round(100 * productiveCount / counted.length),
           productiveMinutes: Math.round(productiveCount / ROWS_PER_MINUTE),
-          offTaskEvents: offTaskCount,
-          offTaskMinutes: Math.round(offTaskCount / ROWS_PER_MINUTE),
+          unproductiveEvents: unproductiveCount,
+          unproductiveMinutes: Math.round(unproductiveCount / ROWS_PER_MINUTE),
         }
 
         // --- Category breakdown for today ---

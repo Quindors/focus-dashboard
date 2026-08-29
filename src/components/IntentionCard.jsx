@@ -4,6 +4,7 @@ import {
   endIntention,
   fetchStatus,
   isLocal,
+  pauseIntention,
   startBreak,
   startIntention,
 } from '../lib/dataSource'
@@ -25,7 +26,7 @@ const STATE = {
   partial:  { ring: 'text-amber-500',   chip: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',       label: 'Drifting' },
   off:      { ring: 'text-red-500',     chip: 'bg-red-500/15 text-red-600 dark:text-red-400',             label: 'Off intention' },
   break:    { ring: 'text-sky-500',     chip: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',             label: 'On a break' },
-  tracking: { ring: 'text-slate-400',   chip: 'bg-slate-500/15 text-slate-500 dark:text-slate-400',       label: 'Tracking only' },
+  paused:   { ring: 'text-sky-500',     chip: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',             label: 'Paused' },
   idle:     { ring: 'text-slate-400',   chip: 'bg-slate-500/15 text-slate-500 dark:text-slate-400',       label: 'No session' },
 }
 
@@ -52,8 +53,9 @@ function formatLeft(secs) {
 }
 
 // Countdown ring. Ticks locally every second so it stays smooth between the
-// polls, rather than jumping in 5-second steps.
-function Dial({ snap, colors }) {
+// polls, rather than jumping in 5-second steps. `verb` names what happens at
+// zero — a session "ends", a pause "resumes".
+function Dial({ snap, colors, verb = 'ends' }) {
   const [, tick] = useState(0)
   useEffect(() => {
     const id = setInterval(() => tick((n) => n + 1), 1000)
@@ -85,7 +87,7 @@ function Dial({ snap, colors }) {
           {formatLeft(left)}
         </div>
         <div className="text-xs text-slate-400 dark:text-slate-500 mt-1.5">
-          left · ends {timeLabel(ends)}
+          left · {verb} {timeLabel(ends)}
         </div>
       </div>
     </div>
@@ -104,8 +106,8 @@ function Chip({ colors }) {
 // Focus sessions and breaks — the two halves of the same cycle, so they share
 // one card. A session is what you declare and get scored against (ALIGN); a
 // break is the monitor switching off entirely for 15 minutes afterwards.
-// Both live on the monitor's machine, so like ModeToggle this renders in local
-// mode only and stays hidden until the API answers.
+// Both live on the monitor's machine, so this renders in local mode only and
+// stays hidden until the API answers.
 export default function IntentionCard() {
   const [snap, setSnap] = useState(null)
   const [ready, setReady] = useState(false)
@@ -161,6 +163,10 @@ export default function IntentionCard() {
   const finish = (status) => run(() => endIntention(status))
   const takeBreak = () => run(() => startBreak(BREAK_MINUTES))
   const stopBreak = () => run(() => endBreak())
+  const pause = () => run(() => pauseIntention())
+  // A pause is a break under the hood, so resuming early is ending the
+  // break — the monitor hands the unused part of the minute back.
+  const resume = () => run(() => endBreak())
 
   const card = 'mb-6 bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md transition-colors'
 
@@ -194,6 +200,13 @@ export default function IntentionCard() {
   }
 
   if (snap.phase === 'session') {
+    const paused = snap.state === 'paused'
+    // While paused, snap's started_at/ends_at window is the pause itself, so
+    // the Dial counts down to the resume. The session's own frozen remainder
+    // is how far its (extended) end sits past the pause's end.
+    const sessionEnd = paused && snap.intention ? parseStamp(snap.intention.ends_at) : null
+    const pauseEnd = paused && snap.break ? parseStamp(snap.break.ends_at) : null
+    const frozenLeft = sessionEnd && pauseEnd ? Math.max(0, (sessionEnd - pauseEnd) / 1000) : null
     return (
       <div className={card}>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -212,19 +225,42 @@ export default function IntentionCard() {
                 own classification. The timer widget shows the same field and
                 floats over real work, where it means something. */}
             <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-              started {timeLabel(parseStamp(snap.started_at))}
+              {paused
+                ? `timer frozen${frozenLeft != null ? ` — resumes with ${formatLeft(frozenLeft)} left` : ''}`
+                : `started ${timeLabel(parseStamp(snap.started_at))}`}
             </div>
           </div>
-          <Dial snap={snap} colors={colors} />
+          <Dial snap={snap} colors={colors} verb={paused ? 'resumes' : 'ends'} />
           <div className="flex gap-2">
-            <button
-              onClick={() => finish('completed')}
-              disabled={busy}
-              title={`Ends the session and starts a ${BREAK_MINUTES}-minute break`}
-              className="px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
-            >
-              Done
-            </button>
+            {paused ? (
+              <button
+                onClick={resume}
+                disabled={busy}
+                title="Resume the session now — the unused pause time is handed back"
+                className="px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
+              >
+                Resume now
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => finish('completed')}
+                  disabled={busy}
+                  title={`Ends the session and starts a ${BREAK_MINUTES}-minute break`}
+                  className="px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
+                >
+                  Done
+                </button>
+                <button
+                  onClick={pause}
+                  disabled={busy}
+                  title="Freeze the timer and monitoring for 1 minute — no session time is lost"
+                  className="px-3 py-1.5 rounded-md text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                >
+                  Pause 1m
+                </button>
+              </>
+            )}
             <button
               onClick={() => finish('abandoned')}
               disabled={busy}

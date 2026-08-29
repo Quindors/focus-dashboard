@@ -39,12 +39,12 @@ export default function TodayCard({ today }) {
       <div className="grid grid-cols-3 gap-4 items-start">
         <PctStat pct={today.productivePct} />
         <TimeStat minutes={today.productiveMinutes} label="productive" accent="text-emerald-600 dark:text-emerald-400" />
-        <TimeStat minutes={today.offTaskMinutes} label="off-task" accent="text-red-500 dark:text-red-400" />
+        <TimeStat minutes={today.unproductiveMinutes} label="unproductive" accent="text-red-500 dark:text-red-400" />
       </div>
       <div className="mt-5 flex gap-2 text-xs text-slate-400 dark:text-slate-500">
         <span>{today.totalEvents} events</span>
         <span aria-hidden>·</span>
-        <span>{today.offTaskEvents} off-task events</span>
+        <span>{today.unproductiveEvents} unproductive events</span>
       </div>
     </div>
   )

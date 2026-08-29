@@ -53,21 +53,9 @@ async function apiPost(path, body) {
   return r.json()
 }
 
-// Monitor mode: 'distraction_free' (alerts on) or 'time_tracking' (log only,
-// no alerts). Mode lives on the machine running the monitor, so this always
-// talks to the local API — there is no Supabase fallback.
-export async function fetchMode() {
-  const d = await apiGet('/api/mode')
-  return d.mode
-}
-
-export async function saveMode(mode) {
-  return apiPost('/api/mode', { mode })
-}
-
 // Session intentions ("for the next N minutes I intend to do X") live on the
-// machine running the monitor, like mode — always the local API, no Supabase
-// fallback. Active shape: { id, text, started_at, ends_at, status } | null.
+// machine running the monitor — always the local API, no Supabase fallback.
+// Active shape: { id, text, started_at, ends_at, status } | null.
 export async function fetchIntention() {
   const d = await apiGet('/api/intention')
   return d.active
@@ -93,6 +81,15 @@ export async function pauseIntention() {
   return apiPost('/api/intention/pause', {})
 }
 
+// Finished focus sessions (completed or expired — the same set Beeminder
+// counts), newest first, each with the mean 0-1 ALIGN over its scored rows
+// (avg_align, null if none were scored). Sessions live on the machine running
+// the monitor, like intentions — always the local API, no Supabase fallback.
+// Feeds the forest tab.
+export async function fetchSessions(limit = 1000) {
+  return apiGet(`/api/sessions?limit=${limit}`)
+}
+
 // The monitor's resolved view of right now — phase ('break' | 'session' |
 // 'idle'), a color state, a label and a countdown. The desktop timer widget
 // and the tray icon render from this same payload, so what you see here and
@@ -103,7 +100,7 @@ export async function fetchStatus() {
 
 // Breaks: a fixed stretch with the monitor fully off — nothing classified,
 // nothing logged, no alerts, no intention needed. Live on the monitor's
-// machine like mode and intentions, so: local API only.
+// machine like intentions, so: local API only.
 export async function fetchBreak() {
   const d = await apiGet('/api/break')
   return d.active
