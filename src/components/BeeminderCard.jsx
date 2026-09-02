@@ -1,16 +1,28 @@
-import { useEffect, useState } from 'react'
-import { fetchBeeminder, saveBeeminder, isLocal } from '../lib/dataSource'
+import { useCallback, useEffect, useState } from 'react'
+import {
+  disconnectBeeminder,
+  fetchBeeminder,
+  goLiveBeeminder,
+  isLocal,
+  saveBeeminder,
+} from '../lib/dataSource'
 
-// One-time Beeminder setup. Renders only while the integration is
-// unconfigured: once the monitor's .env holds a user/token/goal (whether
-// saved here or edited by hand), /api/beeminder reports configured and the
-// card disappears for good. "Not now" hides it locally for people who never
-// want it, without writing anything to the monitor.
+// Beeminder setup and health, in one card.
 //
-// Two paths: connect a goal that already exists on beeminder.com, or have
-// the monitor create a fresh Do More goal (units: hours) on the user's own
-// account — they still need their own Beeminder account and token either way.
+//   unconfigured  -> the setup form: connect an existing goal, or have the
+//                    monitor create a Do More goal (units: hours) on the
+//                    user's own account
+//   dry run       -> a notice that nothing is being sent yet, with "Go live"
+//   failing       -> the last push's error (deleted goal, dead token...) with
+//                    "Reconnect", which reopens the form
+//   healthy       -> nothing at all
+//
+// A Beeminder problem never stops the monitor, so this card is the only
+// place it becomes visible outside cft.log. "Not now" hides the setup form
+// for people who never want it, without writing anything to the monitor;
+// it does not hide a dry-run or failure notice.
 const DISMISS_KEY = 'beeminder-card-dismissed'
+const POLL_MS = 30000
 
 const inputClass =
   'w-full text-sm rounded-md border border-slate-200 dark:border-slate-700 px-2 py-1.5 ' +
@@ -18,6 +30,13 @@ const inputClass =
   'placeholder:text-slate-300 dark:placeholder:text-slate-600 transition-colors'
 
 const linkClass = 'underline hover:text-slate-700 dark:hover:text-slate-200'
+
+const primaryBtn =
+  'text-xs px-3 py-1.5 rounded-md bg-emerald-500 text-white font-medium hover:bg-emerald-600 ' +
+  'disabled:opacity-30 disabled:hover:bg-emerald-500 transition-colors'
+const quietBtn =
+  'text-xs px-2 py-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:text-slate-600 ' +
+  'dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 transition-colors'
 
 function Field({ label, children }) {
   return (
@@ -56,10 +75,16 @@ function ModePick({ mode, setMode, disabled }) {
   )
 }
 
+function goalUrl(user, goal) {
+  return `https://www.beeminder.com/${encodeURIComponent(user || '')}/${encodeURIComponent(goal || '')}`
+}
+
 export default function BeeminderCard() {
-  const [state, setState] = useState('hidden') // hidden | form | saving | done
-  const [mode, setMode] = useState('create')
+  const [status, setStatus] = useState(null)   // last /api/beeminder answer
+  const [view, setView] = useState('auto')     // auto | form | done
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [mode, setMode] = useState('create')
   const [user, setUser] = useState('')
   const [token, setToken] = useState('')
   const [focusGoal, setFocusGoal] = useState('focus')
@@ -69,31 +94,77 @@ export default function BeeminderCard() {
     () => localStorage.getItem(DISMISS_KEY) === '1'
   )
 
+  const refresh = useCallback(() => {
+    if (!isLocal) return Promise.resolve()
+    // An unreachable monitor or an older exe without the endpoint leaves
+    // status null, which renders nothing.
+    return fetchBeeminder().then(setStatus).catch(() => {})
+  }, [])
+
   useEffect(() => {
-    if (!isLocal || dismissed) return
+    if (!isLocal) return
     let alive = true
-    fetchBeeminder()
-      .then((s) => {
-        // Only an explicit "not configured" shows the card; an unreachable
-        // monitor or an older exe without the endpoint keeps it hidden.
-        if (alive && s && s.configured === false) setState('form')
-      })
-      .catch(() => {})
-    return () => { alive = false }
-  }, [dismissed])
+    const load = () => refresh().then(() => { if (!alive) setStatus(null) })
+    load()
+    const id = setInterval(load, POLL_MS)
+    return () => { alive = false; clearInterval(id) }
+  }, [refresh])
 
-  if (!isLocal || dismissed || state === 'hidden') return null
+  // Prefill the reconnect form with what the monitor already knows.
+  useEffect(() => {
+    if (status?.user) setUser(status.user)
+    if (status?.focus_goal) setFocusGoal(status.focus_goal)
+  }, [status?.user, status?.focus_goal])
 
-  if (state === 'done') {
+  if (!isLocal || !status) return null
+
+  const configured = status.configured === true
+  const failing = configured && status.last_push && status.last_push.ok === false
+  const dryRun = configured && status.dry_run
+
+  const dismiss = () => {
+    localStorage.setItem(DISMISS_KEY, '1')
+    setDismissed(true)
+  }
+
+  const run = async (fn, after) => {
+    setError(null)
+    setBusy(true)
+    try {
+      await fn()
+      await refresh()
+      if (after) after()
+    } catch (err) {
+      setError(err.message)
+    }
+    setBusy(false)
+  }
+
+  const creating = mode === 'create'
+  const submit = (e) => {
+    e.preventDefault()
+    run(
+      () =>
+        saveBeeminder({
+          user,
+          token,
+          focusGoal,
+          createGoal: creating,
+          hoursPerDay: creating ? hoursPerDay : undefined,
+          leewayDays: creating ? leewayDays : undefined,
+        }),
+      () => { setToken(''); setView('done') }
+    )
+  }
+
+  const disconnect = () => run(disconnectBeeminder, () => setView('auto'))
+  const goLive = () => run(goLiveBeeminder)
+
+  if (view === 'done') {
     return (
       <div className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 p-4 mb-6 text-sm text-emerald-700 dark:text-emerald-300">
         Beeminder connected — your focus hours now sync every few minutes.{' '}
-        <a
-          href={`https://www.beeminder.com/${encodeURIComponent(user.trim())}/${encodeURIComponent(focusGoal.trim())}`}
-          target="_blank"
-          rel="noreferrer"
-          className="underline"
-        >
+        <a href={goalUrl(user, focusGoal)} target="_blank" rel="noreferrer" className="underline">
           View the goal
         </a>
         .
@@ -101,34 +172,62 @@ export default function BeeminderCard() {
     )
   }
 
-  const dismiss = () => {
-    localStorage.setItem(DISMISS_KEY, '1')
-    setDismissed(true)
-  }
+  // --- configured: only speak up when something needs attention ----------
 
-  const creating = mode === 'create'
-
-  const submit = async (e) => {
-    e.preventDefault()
-    setError(null)
-    setState('saving')
-    try {
-      await saveBeeminder({
-        user,
-        token,
-        focusGoal,
-        createGoal: creating,
-        hoursPerDay: creating ? hoursPerDay : undefined,
-        leewayDays: creating ? leewayDays : undefined,
-      })
-      setState('done')
-    } catch (err) {
-      setError(err.message)
-      setState('form')
+  if (configured && view !== 'form') {
+    if (failing) {
+      return (
+        <div className="rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-4 mb-6">
+          <div className="text-sm font-semibold text-red-700 dark:text-red-300">
+            Beeminder isn't receiving your hours
+          </div>
+          <p className="text-xs text-red-600/90 dark:text-red-300/80 mt-0.5 max-w-prose">
+            {status.last_push.error}
+          </p>
+          <div className="flex items-center gap-3 mt-3 flex-wrap">
+            <button onClick={() => { setError(null); setView('form') }} disabled={busy} className={primaryBtn}>
+              Reconnect
+            </button>
+            <button onClick={disconnect} disabled={busy} className={quietBtn}>
+              Disconnect
+            </button>
+            {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
+          </div>
+        </div>
+      )
     }
+    if (dryRun) {
+      return (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 p-4 mb-6">
+          <div className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+            Beeminder is in dry-run mode — nothing is being sent yet
+          </div>
+          <p className="text-xs text-amber-700/80 dark:text-amber-300/80 mt-0.5 max-w-prose">
+            Connected to{' '}
+            <a href={goalUrl(status.user, status.focus_goal)} target="_blank" rel="noreferrer" className="underline">
+              {status.user}/{status.focus_goal}
+            </a>
+            , but each push is only logged. Go live when the numbers in the log look right.
+          </p>
+          <div className="flex items-center gap-3 mt-3 flex-wrap">
+            <button onClick={goLive} disabled={busy} className={primaryBtn}>
+              {busy ? 'Switching…' : 'Go live'}
+            </button>
+            <button onClick={disconnect} disabled={busy} className={quietBtn}>
+              Disconnect
+            </button>
+            {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
+          </div>
+        </div>
+      )
+    }
+    return null
   }
 
-  const busy = state === 'saving'
+  // --- unconfigured (or reconnecting): the setup form ---------------------
+
+  if (!configured && dismissed) return null
+
   const incomplete =
     !user.trim() || !token.trim() || !focusGoal.trim() || (creating && !hoursPerDay.trim())
 
@@ -137,7 +236,7 @@ export default function BeeminderCard() {
       <div className="flex items-start justify-between gap-4 mb-3">
         <div>
           <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-            Connect Beeminder
+            {configured ? 'Reconnect Beeminder' : 'Connect Beeminder'}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 max-w-prose">
             Push your daily focus hours to a{' '}
@@ -157,13 +256,15 @@ export default function BeeminderCard() {
             .
           </p>
         </div>
-        <button
-          onClick={dismiss}
-          disabled={busy}
-          className="shrink-0 text-xs px-2 py-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-        >
-          Not now
-        </button>
+        {configured ? (
+          <button onClick={() => setView('auto')} disabled={busy} className={`shrink-0 ${quietBtn}`}>
+            Cancel
+          </button>
+        ) : (
+          <button onClick={dismiss} disabled={busy} className={`shrink-0 ${quietBtn}`}>
+            Not now
+          </button>
+        )}
       </div>
 
       <div className="mb-3">
@@ -234,11 +335,7 @@ export default function BeeminderCard() {
         )}
 
         <div className="sm:col-span-4 flex items-center gap-3 flex-wrap">
-          <button
-            type="submit"
-            disabled={busy || incomplete}
-            className="text-xs px-3 py-1.5 rounded-md bg-emerald-500 text-white font-medium hover:bg-emerald-600 disabled:opacity-30 disabled:hover:bg-emerald-500 transition-colors"
-          >
+          <button type="submit" disabled={busy || incomplete} className={primaryBtn}>
             {busy
               ? 'Checking with Beeminder…'
               : creating

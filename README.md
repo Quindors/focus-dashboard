@@ -11,10 +11,10 @@ The Overview tab also carries a one-time **Connect Beeminder** card
 `.env` on the monitor's machine. It can either connect an existing goal or —
 with `create_goal` — have the monitor create the Do More goal (units: hours)
 on the user's account, with a user-chosen daily commitment and days of
-starting leeway. The card renders only while the monitor reports the
-integration unconfigured — once credentials exist (from the card or a
-hand-edited `.env`), it disappears; "Not now" hides it per-browser via
-localStorage.
+starting leeway. Once configured the card doubles as the health surface: it
+shows a dry-run notice with "Go live", or the last push's error with
+"Reconnect" / "Disconnect", and renders nothing while healthy. "Not now"
+hides the setup form per-browser via localStorage (never a warning).
 
 ## How it gets data
 

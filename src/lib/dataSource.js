@@ -124,6 +124,16 @@ export async function fetchBeeminder() {
   return apiGet('/api/beeminder')
 }
 
+// Leave dry-run mode (datapoints start really being sent) / forget the
+// credentials entirely. Both answer with the fresh status.
+export async function goLiveBeeminder() {
+  return apiPost('/api/beeminder/live', {})
+}
+
+export async function disconnectBeeminder() {
+  return apiPost('/api/beeminder/disconnect', {})
+}
+
 export async function saveBeeminder({
   user, token, focusGoal, sessionsGoal, createGoal, hoursPerDay, leewayDays,
 }) {
