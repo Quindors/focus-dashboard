@@ -11,9 +11,11 @@ The Overview tab also carries a one-time **Connect Beeminder** card
 `.env` on the monitor's machine. It can either connect an existing goal or —
 with `create_goal` — have the monitor create the Do More goal (units: hours)
 on the user's account, with a user-chosen daily commitment and days of
-starting leeway. Once configured the card doubles as the health surface: it
-shows a dry-run notice with "Go live", or the last push's error with
-"Reconnect" / "Disconnect", and renders nothing while healthy. "Not now"
+starting leeway. Once configured the card doubles as the health surface: a
+goal deleted on beeminder.com turns it into a "new goal" form (the stored
+token is reused), dry-run mode shows a notice with "Go live", any other
+failure shows the reason with "Reconnect" / "Disconnect", and it renders
+nothing while healthy. "Not now"
 hides the setup form per-browser via localStorage (never a warning).
 
 ## How it gets data

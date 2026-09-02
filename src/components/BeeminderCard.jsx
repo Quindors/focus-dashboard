@@ -13,8 +13,11 @@ import {
 //                    monitor create a Do More goal (units: hours) on the
 //                    user's own account
 //   dry run       -> a notice that nothing is being sent yet, with "Go live"
-//   failing       -> the last push's error (deleted goal, dead token...) with
-//                    "Reconnect", which reopens the form
+//   goal missing  -> the goal was deleted or renamed on beeminder.com: a
+//                    "new goal" form that reuses the stored token, so making
+//                    a replacement is one step
+//   failing       -> any other push error (dead token, unreachable...) with
+//                    "Reconnect", which reopens the full form
 //   healthy       -> nothing at all
 //
 // A Beeminder problem never stops the monitor, so this card is the only
@@ -119,8 +122,10 @@ export default function BeeminderCard() {
   if (!isLocal || !status) return null
 
   const configured = status.configured === true
-  const failing = configured && status.last_push && status.last_push.ok === false
-  const dryRun = configured && status.dry_run
+  const problem = configured ? status.problem : null
+  const goalMissing = problem && problem.reason === 'missing_goal'
+  const failing = problem && !goalMissing
+  const dryRun = configured && !problem && status.dry_run
 
   const dismiss = () => {
     localStorage.setItem(DISMISS_KEY, '1')
@@ -174,7 +179,7 @@ export default function BeeminderCard() {
 
   // --- configured: only speak up when something needs attention ----------
 
-  if (configured && view !== 'form') {
+  if (configured && view !== 'form' && !goalMissing) {
     if (failing) {
       return (
         <div className="rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-4 mb-6">
@@ -226,18 +231,31 @@ export default function BeeminderCard() {
 
   // --- unconfigured (or reconnecting): the setup form ---------------------
 
-  if (!configured && dismissed) return null
+  if (!configured && dismissed) return null   // a missing goal is never dismissible
 
+  const tokenOnFile = configured && !token.trim()   // server reuses the stored one
   const incomplete =
-    !user.trim() || !token.trim() || !focusGoal.trim() || (creating && !hoursPerDay.trim())
+    !user.trim() || (!token.trim() && !tokenOnFile) || !focusGoal.trim() ||
+    (creating && !hoursPerDay.trim())
 
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 mb-6">
       <div className="flex items-start justify-between gap-4 mb-3">
         <div>
           <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-            {configured ? 'Reconnect Beeminder' : 'Connect Beeminder'}
+            {goalMissing
+              ? 'Your Beeminder goal is gone'
+              : configured
+                ? 'Reconnect Beeminder'
+                : 'Connect Beeminder'}
           </h2>
+          {goalMissing && (
+            <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 max-w-prose">
+              <b>{status.user}/{status.focus_goal}</b> no longer exists on beeminder.com —
+              deleted or renamed. Nothing is being recorded until you pick a new
+              goal below. Your token is kept; leave it blank unless it changed.
+            </p>
+          )}
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 max-w-prose">
             Push your daily focus hours to a{' '}
             <a href="https://www.beeminder.com" target="_blank" rel="noreferrer" className={linkClass}>
@@ -256,7 +274,11 @@ export default function BeeminderCard() {
             .
           </p>
         </div>
-        {configured ? (
+        {goalMissing ? (
+          <button onClick={disconnect} disabled={busy} className={`shrink-0 ${quietBtn}`}>
+            Disconnect
+          </button>
+        ) : configured ? (
           <button onClick={() => setView('auto')} disabled={busy} className={`shrink-0 ${quietBtn}`}>
             Cancel
           </button>
@@ -282,13 +304,13 @@ export default function BeeminderCard() {
             className={inputClass}
           />
         </Field>
-        <Field label="Auth token">
+        <Field label={configured ? 'Auth token (blank = keep current)' : 'Auth token'}>
           <input
             value={token}
             onChange={(e) => setToken(e.target.value)}
             disabled={busy}
             type="password"
-            placeholder="from the link above"
+            placeholder={configured ? 'unchanged' : 'from the link above'}
             autoComplete="off"
             className={inputClass}
           />
