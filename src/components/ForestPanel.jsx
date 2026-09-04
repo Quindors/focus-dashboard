@@ -457,7 +457,7 @@ function whisper(idx, keys, byMonth) {
   if (data.length === 1) {
     const only = data[0]
     const al = only.avg_align != null ? ` at ${Math.round(only.avg_align * 100)}% align` : ''
-    return `A month begins: “${only.text}” — ${durationMin(only)} minutes${al}. The first tree is the hardest to plant.`
+    return `“${only.text}” — ${durationMin(only)} minutes${al}.`
   }
   const longest = data.reduce((a, s) => (durationMin(s) > durationMin(a) ? s : a), data[0])
   const scored = data.filter((s) => s.avg_align != null)
