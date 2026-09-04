@@ -211,42 +211,72 @@ function tinyPine(parent, x, y, s) {
 
 function drawTree(kind, fill, sc, uid, seed = 0) {
   const g = el('g', { class: 'ff-grow' })
-  const st = `fill:${fill}`
+  // Per-tree variation, all seeded so it never reshuffles: a nudged hue, a
+  // taller or squatter trunk, a slight lean, lobes that wander — no two trees
+  // are the same graphic even within a species.
+  const v = (k, amt) => 1 + (jitter(seed * 13 + k) - 0.5) * 2 * amt
+  const tint = jitter(seed * 13 + 1) > 0.5 ? 'white' : 'black'
+  const st = `fill:color-mix(in oklab, ${fill} ${Math.round(90 + jitter(seed * 13 + 2) * 10)}%, ${tint})`
+  const th = v(3, 0.18)
+  const L = (jitter(seed * 13 + 4) - 0.5) * 4
   if (uid) el('ellipse', { cx: 2 * sc, cy: 1, rx: 18 * sc, ry: 4 * sc, fill: '#000', opacity: 'var(--ff-shad-o)', filter: `url(#soft${uid})` }, g)
   const sway = el('g', { class: 'ff-sway' }, g)
   sway.style.animationDuration = (6 + jitter(seed + 5) * 4).toFixed(2) + 's'
   sway.style.animationDelay = (-jitter(seed + 9) * 8).toFixed(2) + 's'
   // No filter on the tree itself: sway must stay a pure composited transform.
   const inner = el('g', {}, sway)
-  el('polygon', { points: pts([[-3.6, 0], [3.6, 0], [2.4, -19], [-2.4, -19]], sc), fill: 'var(--ff-trunk)' }, inner)
+  const trunkH = (kind === 'other' ? 34 : 19) * th
+  el('polygon', {
+    points: pts([[-3.6, 0], [3.6, 0], [2.4 + L, -trunkH], [-2.4 + L, -trunkH]], sc),
+    fill: kind === 'other' ? 'var(--ff-stone)' : 'var(--ff-trunk)',
+  }, inner)
+  const lobe = (cx, cy, r, extra) => el('circle', { cx: (cx * sc).toFixed(1), cy: (cy * sc).toFixed(1), r: (r * sc).toFixed(1), ...extra }, inner)
+  const hi = { fill: '#fff', opacity: 'var(--ff-hi-o)' }
+  const lo = { fill: '#000', opacity: 'var(--ff-lo-o)' }
   if (kind === 'pine') {
-    el('polygon', { points: pts([[-20, -10], [20, -10], [0, -44]], sc), style: st }, inner)
-    el('polygon', { points: pts([[-16, -29], [16, -29], [0, -58]], sc), style: st }, inner)
-    el('polygon', { points: pts([[-10, -46], [10, -46], [0, -71]], sc), style: st }, inner)
-    el('polygon', { points: pts([[-16, -29], [0, -29], [0, -58]], sc), fill: '#fff', opacity: 'var(--ff-hi-o)' }, inner)
+    const w = v(5, 0.12), h = v(6, 0.1)
+    el('polygon', { points: pts([[-20 * w, -10 * h], [20 * w, -10 * h], [L, -44 * h]], sc), style: st }, inner)
+    el('polygon', { points: pts([[-16 * w, -29 * h], [16 * w, -29 * h], [L * 1.3, -58 * h]], sc), style: st }, inner)
+    el('polygon', { points: pts([[-10 * w, -46 * h], [10 * w, -46 * h], [L * 1.6, -71 * h]], sc), style: st }, inner)
+    el('polygon', { points: pts([[-16 * w, -29 * h], [L * 1.3, -29 * h], [L * 1.3, -58 * h]], sc), ...hi }, inner)
   } else if (kind === 'cypress') {
-    el('ellipse', { cx: 0, cy: -34 * sc, rx: 10 * sc, ry: 26 * sc, style: st }, inner)
-    el('ellipse', { cx: 0, cy: -56 * sc, rx: 5.5 * sc, ry: 12 * sc, style: st }, inner)
-    el('ellipse', { cx: -3 * sc, cy: -42 * sc, rx: 4 * sc, ry: 14 * sc, fill: '#fff', opacity: 'var(--ff-hi-o)' }, inner)
-    el('ellipse', { cx: 4 * sc, cy: -26 * sc, rx: 4 * sc, ry: 12 * sc, fill: '#000', opacity: 'var(--ff-lo-o)' }, inner)
-  } else if (kind === 'leaf' || kind === 'other') {
-    el('circle', { cx: 0, cy: -40 * sc, r: 23 * sc, style: st }, inner)
-    el('circle', { cx: -13 * sc, cy: -29 * sc, r: 13 * sc, style: st }, inner)
-    el('circle', { cx: 13 * sc, cy: -29 * sc, r: 13 * sc, style: st }, inner)
-    el('circle', { cx: -8 * sc, cy: -47 * sc, r: 10 * sc, fill: '#fff', opacity: 'var(--ff-hi-o)' }, inner)
-    el('circle', { cx: 10 * sc, cy: -30 * sc, r: 9 * sc, fill: '#000', opacity: 'var(--ff-lo-o)' }, inner)
+    const w = v(5, 0.14), h = v(6, 0.12)
+    el('ellipse', { cx: L * sc, cy: -34 * h * sc, rx: 10 * w * sc, ry: 26 * h * sc, style: st }, inner)
+    el('ellipse', { cx: L * 1.4 * sc, cy: -56 * h * sc, rx: 5.5 * w * sc, ry: 12 * h * sc, style: st }, inner)
+    el('ellipse', { cx: (L - 3) * sc, cy: -42 * h * sc, rx: 4 * sc, ry: 14 * h * sc, ...hi }, inner)
+    el('ellipse', { cx: (L + 4) * sc, cy: -26 * h * sc, rx: 4 * sc, ry: 12 * h * sc, ...lo }, inner)
+  } else if (kind === 'other') {
+    // Birch: a tall pale trunk with a small, high, airy crown — nothing like
+    // the broad round canopies, so an uncategorized session reads at a glance.
+    const top = -trunkH
+    lobe(L, top - 6 * v(7, 0.2), 9 * v(8, 0.15), { style: st })
+    lobe(L - 7 * v(9, 0.3), top + 2, 6.5 * v(10, 0.2), { style: st })
+    lobe(L + 7 * v(11, 0.3), top - 1, 6 * v(12, 0.2), { style: st })
+    lobe(L - 2, top - 9, 3.5, hi)
+  } else if (kind === 'leaf') {
+    const w = v(5, 0.12)
+    lobe(L, -40 * th, 23 * w, { style: st })
+    lobe(L - 13 * v(7, 0.25), -29 * th, 13 * v(8, 0.2), { style: st })
+    lobe(L + 13 * v(9, 0.25), -29 * th, 13 * v(10, 0.2), { style: st })
+    if (jitter(seed * 13 + 11) > 0.45) lobe(L + (jitter(seed * 13 + 12) - 0.5) * 20, -52 * th, 8 * v(13, 0.3), { style: st })
+    lobe(L - 8, -47 * th, 10, hi)
+    lobe(L + 10, -30 * th, 9, lo)
   } else if (kind === 'maple') {
-    el('circle', { cx: -13 * sc, cy: -31 * sc, r: 14 * sc, style: st }, inner)
-    el('circle', { cx: 13 * sc, cy: -31 * sc, r: 14 * sc, style: st }, inner)
-    el('circle', { cx: 0, cy: -46 * sc, r: 17 * sc, style: st }, inner)
-    el('circle', { cx: -6 * sc, cy: -50 * sc, r: 8 * sc, fill: '#fff', opacity: 'var(--ff-hi-o)' }, inner)
-    el('circle', { cx: 11 * sc, cy: -29 * sc, r: 8 * sc, fill: '#000', opacity: 'var(--ff-lo-o)' }, inner)
+    const w = v(5, 0.15)
+    lobe(L - 13 * v(7, 0.25), -31 * th, 14 * w, { style: st })
+    lobe(L + 13 * v(8, 0.25), -31 * th, 14 * w, { style: st })
+    lobe(L, -46 * th, 17 * v(9, 0.12), { style: st })
+    if (jitter(seed * 13 + 10) > 0.5) lobe(L + (jitter(seed * 13 + 11) - 0.5) * 24, -40 * th, 9, { style: st })
+    lobe(L - 6, -50 * th, 8, hi)
+    lobe(L + 11, -29 * th, 8, lo)
   } else {
-    el('ellipse', { cx: 0, cy: -27 * sc, rx: 20 * sc, ry: 15 * sc, style: st }, inner)
-    el('circle', { cx: -11 * sc, cy: -36 * sc, r: 7 * sc, style: st }, inner)
-    el('circle', { cx: 11 * sc, cy: -33 * sc, r: 6 * sc, style: st }, inner)
-    el('circle', { cx: -6 * sc, cy: -33 * sc, r: 6 * sc, fill: '#fff', opacity: 'var(--ff-hi-o)' }, inner)
-    el('circle', { cx: 9 * sc, cy: -23 * sc, r: 6 * sc, fill: '#000', opacity: 'var(--ff-lo-o)' }, inner)
+    const w = v(5, 0.15)
+    el('ellipse', { cx: L * sc, cy: -27 * th * sc, rx: 20 * w * sc, ry: 15 * v(6, 0.15) * sc, style: st }, inner)
+    lobe(L - 11 * v(7, 0.3), -36 * th, 7 * v(8, 0.25), { style: st })
+    lobe(L + 11 * v(9, 0.3), -33 * th, 6 * v(10, 0.25), { style: st })
+    if (jitter(seed * 13 + 11) > 0.5) lobe(L + (jitter(seed * 13 + 12) - 0.5) * 16, -40 * th, 5, { style: st })
+    lobe(L - 6, -33 * th, 6, hi)
+    lobe(L + 9, -23 * th, 6, lo)
   }
   return g
 }
@@ -285,17 +315,28 @@ function drawLandmark(svg, uid, id, x, y) {
 
 // Tooltip content is built with textContent (never innerHTML): intention text
 // is user data.
-function fillTip(tip, s, kind) {
+// What a session was: the category the intention gate declared at the start,
+// or — for sessions from before the gate — the one the monitor observed most.
+const sessionCategory = (s) => s.llm_category || s.top_category || null
+
+function fillTip(tip, s, kind, extra = 0) {
   tip.replaceChildren()
   const t = document.createElement('p'); t.className = 'ff-tip-t'
   const dot = document.createElement('span'); dot.className = 'ff-tip-dot'
   dot.style.background = `var(--ff-${kind}-1)`
   t.appendChild(dot); t.appendChild(document.createTextNode(s.text))
   const m1 = document.createElement('p'); m1.className = 'ff-tip-m'
-  m1.textContent = `${s.llm_category || 'Uncategorized'} · ${fmtDate(s.started_at)}`
+  const declared = s.llm_category, seen = s.top_category
+  const pct = s.top_share != null ? `${Math.round(s.top_share * 100)}%` : ''
+  let cat
+  if (declared && seen && declared !== seen) cat = `${declared} · mostly ${seen}${pct ? ` (${pct})` : ''}`
+  else if (declared) cat = declared
+  else if (seen) cat = `${seen}${pct ? ` (${pct} of the session)` : ''}`
+  else cat = 'Uncategorized'
+  m1.textContent = `${cat} · ${fmtDate(s.started_at)}`
   const m2 = document.createElement('p'); m2.className = 'ff-tip-m'
   const alignTxt = s.avg_align == null ? 'ALIGN —' : `ALIGN ${Math.round(s.avg_align * 100)}%`
-  m2.textContent = `${durationMin(s)} min · ${alignTxt}`
+  m2.textContent = `${durationMin(s)} min · ${alignTxt}${extra ? ` · grove of ${extra + 1}` : ''}`
   tip.append(t, m1, m2)
 }
 
@@ -304,64 +345,105 @@ function fillTip(tip, s, kind) {
 // given tree count) appears, so tab switches and swipes stop "popping" trees.
 const grownGroves = new Set()
 
+// Landmark anchors: x, y, and a keep-clear radius the trees respect.
+const LANDMARK_SPOTS = { pond: [190, 492, 80], lantern: [880, 487, 36], bench: [115, 483, 40], cabin: [848, 408, 50], falls: [125, 404, 46] }
+
 function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, durCap) {
   svg.replaceChildren()
   defsFor(svg, uid)
   drawBackdrop(svg, uid, seedOff)
-  const spots = { pond: [190, 492], lantern: [880, 487], bench: [115, 483], cabin: [848, 408], falls: [125, 404] }
-  earnedHere.forEach((id) => drawLandmark(svg, uid, id, ...(spots[id] || [500, 470])))
+  earnedHere.forEach((id) => { const [x, y] = LANDMARK_SPOTS[id] || [500, 470]; drawLandmark(svg, uid, id, x, y) })
   const stamp = `${groveKey}:${sessions.length}`
   const replay = !grownGroves.has(stamp)
   grownGroves.add(stamp)
-  // Trees stand on the terrain the backdrop drew: back band on the mid-ridge
-  // crest, mid band on the meadow's upper slope, front band on the near rise.
-  const bands = [
-    { s: 0.5, x0: 130, x1: 870, y: (x) => hillY(x, 500, 385, 480, 105) + 8 },
-    { s: 0.72, x0: 70, x1: 930, y: (x) => hillY(x, 500, 590, 800, 225) + 16 },
-    { s: 1, x0: 60, x1: 940, y: (x) => hillY(x, 500, 655, 840, 205) + 18 },
-  ]
-  const third = Math.ceil(sessions.length / 3) || 1
-  const buckets = [[], [], []]
-  sessions.forEach((s, i) => buckets[Math.min(Math.floor(i / third), 2)].push([s, i]))
-  buckets.forEach((bucket, bi) => {
-    const band = bands[bi]
-    bucket.forEach(([s, gi], i) => {
-      const n = bucket.length
-      const x = n === 1 ? 500 : band.x0 + ((band.x1 - band.x0) / (n - 1)) * i + (jitter(gi + seedOff) - 0.5) * 34
-      const y = band.y(x) + jitter(gi + seedOff + 3) * 6
-      const mins = durationMin(s)
-      // Size is relative to the user's own longest sessions, so a forest of
-      // 30-60 minute sits still shows real variety.
-      const sc = band.s * (0.55 + (Math.min(mins, durCap) / durCap) * 0.75) * (0.92 + jitter(gi + seedOff + 7) * 0.16)
-      const sp = speciesFor(s.llm_category)
-      const t = el('g', {
-        class: 'ff-tree', transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, tabindex: '0',
-        'aria-label': `${s.text}, ${sp.label}, ${mins} minutes`,
-      }, svg)
-      const body = drawTree(sp.kind, foliageFill(sp.kind, s.avg_align), sc, uid, gi + seedOff)
-      t.appendChild(body)
-      const show = () => {
-        fillTip(tip, s, sp.kind)
-        tip.style.display = 'block'
-        const r = svg.getBoundingClientRect()
-        const px = (x / 1000) * r.width, py = (y / 520) * r.height
-        tip.style.left = Math.min(Math.max(px - 100, 8), r.width - 260) + 'px'
-        tip.style.top = Math.max(py - 128, 8) + 'px'
-      }
-      const hide = () => { tip.style.display = 'none' }
-      t.addEventListener('pointerenter', show)
-      t.addEventListener('focus', show)
-      t.addEventListener('pointerleave', hide)
-      t.addEventListener('blur', hide)
-      if (replay) {
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          body.style.transitionDelay = Math.min(gi * 30, 900) + 'ms'
-          body.classList.add('in')
-        }))
-      } else {
-        body.classList.add('ff-instant', 'in')
-      }
-    })
+
+  // A scattered stand, not rows. Each session tries a handful of seeded
+  // candidate points on the hillside and keeps the one farthest from every
+  // tree (and landmark) already placed. Depth follows y — higher on the slope
+  // is farther away, so smaller and drawn first — and a session's age nudges
+  // its depth, so a month's earliest work stands toward the back.
+  const yTop = (x) => hillY(x, 500, 385, 480, 105) + 8
+  const yBot = (x) => hillY(x, 500, 655, 840, 205) + 20
+  const N = sessions.length
+  const placed = earnedHere.map((id) => { const [x, y, r] = LANDMARK_SPOTS[id] || [500, 470, 40]; return { x, y, r } })
+  const entries = sessions.map((s, i) => {
+    const mins = durationMin(s)
+    // How well the session went counts as much as how long it ran: a clean
+    // 30-minute sprint stands as tall as an hour of drifting.
+    const quality = s.avg_align == null ? 0.5 : Math.max(0, Math.min(1, (s.avg_align - 0.5) / 0.45))
+    // Sparse months keep their trees toward the front rather than stranding
+    // a single session small on the back slope.
+    const tmin = Math.max(0, 0.5 - N * 0.05)
+    const target = N > 1 ? tmin + (1 - tmin) * (i / (N - 1)) : 0.85
+    let best = null
+    for (let k = 0; k < 24; k++) {
+      const x = 50 + jitter(seedOff * 7 + i * 53 + k * 11 + 1) * 900
+      const t = Math.max(0, Math.min(1, target + (jitter(seedOff * 7 + i * 53 + k * 11 + 2) - 0.5) * 0.7))
+      const top = yTop(x), bot = yBot(x)
+      const y = top + (bot - top) * t
+      // Duration is relative to the user's own longest sessions, so a forest
+      // of 30-60 minute sits still shows real variety.
+      const size = (0.6 + 0.4 * t) * (0.7 + (Math.min(mins, durCap) / durCap) * 0.4 + quality * 0.4)
+      const r = 24 * size
+      let gap = Infinity
+      for (const p of placed) gap = Math.min(gap, Math.hypot(p.x - x, (p.y - y) * 1.6) - (p.r + r))
+      if (best === null || gap > best.gap) best = { x, y, size, r, gap }
+      if (gap > 10) break
+    }
+    placed.push({ x: best.x, y: best.y, r: best.r })
+    return { s, gi: i, mins, x: best.x, y: best.y, size: best.size }
+  })
+  entries.sort((a, b) => a.y - b.y)
+
+  entries.forEach(({ s, gi, mins, x, y, size }, rank) => {
+    const sc = size * (0.92 + jitter(gi + seedOff + 7) * 0.16)
+    const sp = speciesFor(sessionCategory(s))
+    const fill = foliageFill(sp.kind, s.avg_align)
+    // Longer and cleaner sessions grow into groves: companion saplings of the
+    // same species gather around the main tree. Purely additive — a short or
+    // drifting session is still a whole tree.
+    const extra = Math.min(3, Math.max(0, Math.floor(mins / 30) - 1 + (s.avg_align != null && s.avg_align >= 0.85 ? 1 : 0)))
+    const t = el('g', {
+      class: 'ff-tree', transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, tabindex: '0',
+      'aria-label': `${s.text}, ${sp.label}, ${mins} minutes${extra ? `, grove of ${extra + 1}` : ''}`,
+    }, svg)
+    const parts = []
+    for (let c = 0; c < extra; c++) {
+      const a = jitter(gi * 17 + c * 5 + seedOff) * Math.PI * 2
+      const dist = (16 + jitter(gi * 17 + c * 5 + seedOff + 1) * 16) * sc
+      const dx = Math.cos(a) * dist, dy = Math.sin(a) * dist * 0.45
+      const csc = sc * (0.42 + jitter(gi * 17 + c * 5 + seedOff + 2) * 0.22)
+      const wrap = el('g', { transform: `translate(${dx.toFixed(1)},${dy.toFixed(1)})` })
+      wrap.appendChild(drawTree(sp.kind, fill, csc, uid, gi * 100 + c + 1 + seedOff))
+      parts.push({ dy, node: wrap })
+    }
+    parts.push({ dy: 0, node: drawTree(sp.kind, fill, sc, uid, gi + seedOff) })
+    parts.sort((a, b) => a.dy - b.dy)
+    parts.forEach((part) => t.appendChild(part.node))
+    const show = () => {
+      fillTip(tip, s, sp.kind, extra)
+      tip.style.display = 'block'
+      const r = svg.getBoundingClientRect()
+      const px = (x / 1000) * r.width, py = (y / 520) * r.height
+      tip.style.left = Math.min(Math.max(px - 100, 8), r.width - 260) + 'px'
+      tip.style.top = Math.max(py - 128, 8) + 'px'
+    }
+    const hide = () => { tip.style.display = 'none' }
+    t.addEventListener('pointerenter', show)
+    t.addEventListener('focus', show)
+    t.addEventListener('pointerleave', hide)
+    t.addEventListener('blur', hide)
+    const grows = t.querySelectorAll('.ff-grow')
+    if (replay) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        grows.forEach((gEl, n) => {
+          gEl.style.transitionDelay = Math.min(rank * 30 + n * 90, 1200) + 'ms'
+          gEl.classList.add('in')
+        })
+      }))
+    } else {
+      grows.forEach((gEl) => gEl.classList.add('ff-instant', 'in'))
+    }
   })
   el('ellipse', { cx: 500, cy: 600, rx: 860, ry: 110, fill: 'var(--ff-fg-band)', opacity: '.85', filter: `url(#rough${uid})` }, svg)
 }
@@ -372,6 +454,11 @@ function whisper(idx, keys, byMonth) {
   const key = keys[idx]
   const data = byMonth.get(key)
   if (!data?.length) return ''
+  if (data.length === 1) {
+    const only = data[0]
+    const al = only.avg_align != null ? ` at ${Math.round(only.avg_align * 100)}% align` : ''
+    return `A month begins: “${only.text}” — ${durationMin(only)} minutes${al}. The first tree is the hardest to plant.`
+  }
   const longest = data.reduce((a, s) => (durationMin(s) > durationMin(a) ? s : a), data[0])
   const scored = data.filter((s) => s.avg_align != null)
   const cleanest = scored.length ? scored.reduce((a, s) => (s.avg_align > a.avg_align ? s : a), scored[0]) : null
@@ -590,7 +677,7 @@ export default function ForestPanel() {
       : [30, 45, 60]
     const catCounts = new Map()
     for (const s of rows) {
-      const label = speciesFor(s.llm_category).label
+      const label = speciesFor(sessionCategory(s)).label
       catCounts.set(label, (catCounts.get(label) || 0) + 1)
     }
     const speciesLegend = [...catCounts.entries()]
@@ -657,7 +744,7 @@ export default function ForestPanel() {
   const firstDate = fmtDate(all[0].started_at)
 
   const stats = [
-    { k: 'Trees standing', v: all.length, u: 'completed sessions' },
+    { k: 'Sessions standing', v: all.length, u: 'each a tree or a grove' },
     { k: 'Focused hours', v: totalHrs.toFixed(1), u: 'inside sessions' },
     { k: 'Avg align', v: avgAlign != null ? `${avgAlign}%` : '—', u: 'time on intention' },
     { k: 'Best streak', v: bestStreak(all), u: 'days in a row' },
@@ -752,7 +839,7 @@ export default function ForestPanel() {
           </div>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-lg shadow-md p-5 flex flex-col">
-          <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500 mb-3">Size is the duration</p>
+          <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500 mb-3">Size is duration and align</p>
           <div className="flex items-end justify-around gap-2 grow">
             {sizeLegend.map((mins) => (
               <div key={mins} className="flex flex-col items-center justify-end gap-1 text-xs text-slate-500 dark:text-slate-400">
@@ -761,7 +848,7 @@ export default function ForestPanel() {
               </div>
             ))}
           </div>
-          <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">Scaled to your own sessions.</p>
+          <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">Scaled to your own sessions; a clean session stands taller than its minutes alone. Longer and cleaner sessions grow into groves.</p>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-lg shadow-md p-5 flex flex-col">
           <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500 mb-3">Lushness is the align score</p>
