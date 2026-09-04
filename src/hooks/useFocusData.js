@@ -37,7 +37,11 @@ export function useFocusData(pollMs = 15000) {
           productiveMap[c.name] = c.is_productive
         }
 
-        // Filter out system/ambiguous (is_productive === null) for percentage math.
+        // Productive % is productive time over ALL logged time - System and
+        // Ambiguous rows included in the denominator. Every row is a slice of
+        // the day at the screen; time the monitor could not place is still
+        // time that was not spent on productive work. `counted` (rows with a
+        // definite productive/off-task flag) is kept for the split itself.
         const counted = rows.filter(r => productiveMap[r.category_name] !== null
                                       && productiveMap[r.category_name] !== undefined)
         const productiveCount = counted.filter(r => productiveMap[r.category_name] === true).length
@@ -48,7 +52,7 @@ export function useFocusData(pollMs = 15000) {
           totalMinutes: Math.round(rows.length / ROWS_PER_MINUTE),   // full screen time
           countedEvents: counted.length,           // events that influence the % calc
           productiveEvents: productiveCount,
-          productivePct: counted.length === 0 ? 0 : Math.round(100 * productiveCount / counted.length),
+          productivePct: rows.length === 0 ? 0 : Math.round(100 * productiveCount / rows.length),
           productiveMinutes: Math.round(productiveCount / ROWS_PER_MINUTE),
           unproductiveEvents: unproductiveCount,
           unproductiveMinutes: Math.round(unproductiveCount / ROWS_PER_MINUTE),
@@ -112,7 +116,7 @@ export function useFocusData(pollMs = 15000) {
             totalEvents: tally.total,
             productiveEvents: tally.productive,
             productiveMinutes: Math.round(tally.productive / ROWS_PER_MINUTE),
-            productivePct: tally.counted === 0 ? 0 : Math.round(100 * tally.productive / tally.counted),
+            productivePct: tally.total === 0 ? 0 : Math.round(100 * tally.productive / tally.total),
           })
         }
 
