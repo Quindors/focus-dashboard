@@ -24,15 +24,65 @@ function localStamp(d) {
 // free of URLs and paths — it's shown to users as-is.
 const UNREACHABLE = "Can't reach the cft monitor. Is it running on this PC?"
 
+// --- monitor reachability ---------------------------------------------------
+// The hosted page reads from the monitor on this PC first and, when that is
+// down, from the Supabase mirror (data as of the last sync). Reads fall back;
+// writes never do: mirroring is one-way (local -> cloud), so an edit made
+// while the monitor is off would never reach the classifier. It has to wait.
+let monitorLive = null            // null until the first probe, then true/false
+const liveListeners = new Set()
+function setLive(v) {
+  if (v === monitorLive) return
+  monitorLive = v
+  liveListeners.forEach((fn) => fn(v))
+}
+export const isMonitorLive = () => monitorLive
+export function onMonitorLive(fn) {
+  liveListeners.add(fn)
+  fn(monitorLive)
+  return () => liveListeners.delete(fn)
+}
+export async function probeMonitor() {
+  const ctl = new AbortController()
+  const t = setTimeout(() => ctl.abort(), 4000)
+  try {
+    const r = await fetch(`${API_BASE}/api/status`, { signal: ctl.signal })
+    setLive(r.ok)
+  } catch {
+    setLive(false)
+  } finally {
+    clearTimeout(t)
+  }
+  return monitorLive
+}
+
 async function apiGet(path) {
   let r
   try {
     r = await fetch(`${API_BASE}${path}`)
   } catch {
+    setLive(false)
     throw new Error(UNREACHABLE)
   }
+  setLive(true)
   if (!r.ok) throw new Error(`${path} -> HTTP ${r.status}`)
   return r.json()
+}
+
+// Reads go local-first and fall back to the Supabase mirror only when the
+// monitor is unreachable — never on other errors: a 500 from the monitor is a
+// bug to see, not a reason to quietly show stale data. Cloud-only mode
+// (VITE_DATA_SOURCE=supabase) skips the local try.
+async function localFirst(local, cloud) {
+  if (isLocal) {
+    try {
+      return await local()
+    } catch (e) {
+      if (e.message !== UNREACHABLE || !supabase) throw e
+    }
+  }
+  if (!supabase) throw new Error(UNREACHABLE)
+  return cloud()
 }
 
 async function apiPost(path, body) {
@@ -83,11 +133,22 @@ export async function pauseIntention() {
 
 // Finished focus sessions (completed or expired — the same set Beeminder
 // counts), newest first, each with the mean 0-1 ALIGN over its scored rows
-// (avg_align, null if none were scored). Sessions live on the machine running
-// the monitor, like intentions — always the local API, no Supabase fallback.
-// Feeds the forest tab.
+// (avg_align, null if none were scored) and the observed category. Local API
+// first; when the monitor is off, the sessions_v view over the cloud mirror
+// serves the same shape. Feeds the forest tab.
 export async function fetchSessions(limit = 1000) {
-  return apiGet(`/api/sessions?limit=${limit}`)
+  return localFirst(
+    () => apiGet(`/api/sessions?limit=${limit}`),
+    async () => {
+      const { data, error } = await supabase
+        .from('sessions_v')
+        .select('*')
+        .order('started_at', { ascending: false })
+        .limit(limit)
+      if (error) throw new Error(error.message)
+      return data
+    },
+  )
 }
 
 // The monitor's resolved view of right now — phase ('break' | 'session' |
@@ -150,42 +211,57 @@ export async function saveBeeminder({
 
 // Rows since a given Date: [{ timestamp, category_name, confidence }, ...]
 export async function fetchFocusRows(since) {
-  if (isLocal) {
-    return apiGet(`/api/focus?since=${encodeURIComponent(localStamp(since))}`)
-  }
-  const { data, error } = await supabase
-    .from('focus_logs')
-    .select('timestamp, category_name, confidence')
-    .gte('timestamp', since.toISOString())
-    .order('timestamp', { ascending: false })
-  if (error) throw new Error(error.message)
-  return data
+  return localFirst(
+    () => apiGet(`/api/focus?since=${encodeURIComponent(localStamp(since))}`),
+    async () => {
+      // The mirror stores the monitor's naive local stamps as-is (they land
+      // as +00), so the comparison value must be the same naive string — an
+      // ISO/UTC instant would be off by the whole timezone offset.
+      const { data, error } = await supabase
+        .from('focus_logs')
+        .select('timestamp, category_name, human_label, confidence')
+        .gte('timestamp', localStamp(since))
+        .order('timestamp', { ascending: false })
+      if (error) throw new Error(error.message)
+      // Same effective label the local API reports: a human correction wins.
+      return data.map((r) => ({
+        timestamp: r.timestamp,
+        category_name: (r.human_label || '').trim() || r.category_name,
+        ai_category: r.category_name,
+        confidence: r.confidence,
+      }))
+    },
+  )
 }
 
 // Categories: [{ name, is_productive }, ...]
 export async function fetchCategories() {
-  if (isLocal) {
-    return apiGet('/api/categories')
-  }
-  const { data, error } = await supabase.from('categories').select('name, is_productive')
-  if (error) throw new Error(error.message)
-  return data
+  return localFirst(
+    () => apiGet('/api/categories'),
+    async () => {
+      const { data, error } = await supabase.from('categories').select('name, description, is_productive')
+      if (error) throw new Error(error.message)
+      return data
+    },
+  )
 }
 
 // Recent events for the review tab:
 // [{ id, timestamp, current_window, category_name, confidence, human_label, reason }, ...]
 export async function fetchRecentEvents(limit = 200) {
-  if (isLocal) {
-    return apiGet(`/api/events?limit=${limit}`)
-  }
-  const { data, error } = await supabase
-    .from('focus_logs')
-    .select('id, timestamp, current_window, category_name, confidence, human_label, reason')
-    .not('current_window', 'is', null)
-    .order('timestamp', { ascending: false })
-    .limit(limit)
-  if (error) throw new Error(error.message)
-  return data
+  return localFirst(
+    () => apiGet(`/api/events?limit=${limit}`),
+    async () => {
+      const { data, error } = await supabase
+        .from('focus_logs')
+        .select('id, timestamp, current_window, category_name, confidence, human_label, reason, intention_id, align_score')
+        .not('current_window', 'is', null)
+        .order('timestamp', { ascending: false })
+        .limit(limit)
+      if (error) throw new Error(error.message)
+      return data
+    },
+  )
 }
 
 // Save (or clear, with humanLabel = null) a human correction on one event.

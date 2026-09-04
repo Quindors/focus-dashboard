@@ -10,6 +10,7 @@ import CategoriesPanel from './components/CategoriesPanel'
 import IntentionCard from './components/IntentionCard'
 import BeeminderCard from './components/BeeminderCard'
 import ForestPanel from './components/ForestPanel'
+import MonitorBanner from './components/MonitorBanner'
 
 function TabBar({ tab, setTab }) {
   const tabs = [
@@ -92,6 +93,8 @@ function App() {
             <ThemeToggle />
           </div>
         </div>
+
+        <MonitorBanner />
 
         {tab === 'overview' && (
           <>

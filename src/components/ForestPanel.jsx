@@ -315,9 +315,14 @@ function drawLandmark(svg, uid, id, x, y) {
 
 // Tooltip content is built with textContent (never innerHTML): intention text
 // is user data.
-// What a session was: the category the intention gate declared at the start,
-// or — for sessions from before the gate — the one the monitor observed most.
-const sessionCategory = (s) => s.llm_category || s.top_category || null
+// What a session was: the category the intention itself was declared as. The
+// observed category (what the monitor logged most) only stands in when nothing
+// was declared AND it clearly dominated — a 48% plurality is not an identity:
+// a "personal statement" session that spent 48% of its rows in Composition
+// is still a college-application session, not a composition one.
+const OBSERVED_MIN_SHARE = 0.6
+const sessionCategory = (s) =>
+  s.llm_category || (s.top_share != null && s.top_share >= OBSERVED_MIN_SHARE ? s.top_category : null)
 
 function fillTip(tip, s, kind, extra = 0) {
   tip.replaceChildren()
@@ -328,11 +333,11 @@ function fillTip(tip, s, kind, extra = 0) {
   const m1 = document.createElement('p'); m1.className = 'ff-tip-m'
   const declared = s.llm_category, seen = s.top_category
   const pct = s.top_share != null ? `${Math.round(s.top_share * 100)}%` : ''
+  const spent = seen && pct ? `time mostly in ${seen} (${pct})` : ''
   let cat
-  if (declared && seen && declared !== seen) cat = `${declared} · mostly ${seen}${pct ? ` (${pct})` : ''}`
-  else if (declared) cat = declared
-  else if (seen) cat = `${seen}${pct ? ` (${pct} of the session)` : ''}`
-  else cat = 'Uncategorized'
+  if (declared) cat = seen && seen !== declared ? `${declared} · ${spent}` : declared
+  else if (sessionCategory(s)) cat = `${seen} (observed, ${pct})`
+  else cat = spent ? `Uncategorized · ${spent}` : 'Uncategorized'
   m1.textContent = `${cat} · ${fmtDate(s.started_at)}`
   const m2 = document.createElement('p'); m2.className = 'ff-tip-m'
   const alignTxt = s.avg_align == null ? 'ALIGN —' : `ALIGN ${Math.round(s.avg_align * 100)}%`
@@ -376,7 +381,7 @@ function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, 
     const tmin = Math.max(0, 0.5 - N * 0.05)
     const target = N > 1 ? tmin + (1 - tmin) * (i / (N - 1)) : 0.85
     let best = null
-    for (let k = 0; k < 24; k++) {
+    for (let k = 0; k < 40; k++) {
       const x = 50 + jitter(seedOff * 7 + i * 53 + k * 11 + 1) * 900
       const t = Math.max(0, Math.min(1, target + (jitter(seedOff * 7 + i * 53 + k * 11 + 2) - 0.5) * 0.7))
       const top = yTop(x), bot = yBot(x)
@@ -388,12 +393,32 @@ function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, 
       let gap = Infinity
       for (const p of placed) gap = Math.min(gap, Math.hypot(p.x - x, (p.y - y) * 1.6) - (p.r + r))
       if (best === null || gap > best.gap) best = { x, y, size, r, gap }
-      if (gap > 10) break
+      // First candidate that clears its neighbours wins; only a crowded
+      // hillside settles for the least-overlapping one.
+      if (gap >= 4) break
     }
     placed.push({ x: best.x, y: best.y, r: best.r })
     return { s, gi: i, mins, x: best.x, y: best.y, size: best.size }
   })
   entries.sort((a, b) => a.y - b.y)
+
+  // The near grass band goes in first so trees can be inserted before it —
+  // a hovered tree is lifted above its neighbours without covering the band.
+  const fgBand = el('ellipse', { cx: 500, cy: 600, rx: 860, ry: 110, fill: 'var(--ff-fg-band)', opacity: '.85', filter: `url(#rough${uid})` }, svg)
+  const restoreDepth = (node) => {
+    const y = Number(node.dataset.y)
+    const after = [...svg.querySelectorAll('.ff-tree')].find((n) => n !== node && Number(n.dataset.y) > y)
+    svg.insertBefore(node, after || fgBand)
+  }
+  // The card hangs off the pointer — bottom edge just above it, centred —
+  // instead of a fixed offset from the tree's base.
+  const placeTip = (ev) => {
+    const box = svg.getBoundingClientRect()
+    const mx = ev.clientX - box.left, my = ev.clientY - box.top
+    const w = tip.offsetWidth || 240, h = tip.offsetHeight || 70
+    tip.style.left = Math.min(Math.max(mx - w / 2, 8), box.width - w - 8) + 'px'
+    tip.style.top = Math.max(my - h - 12, 4) + 'px'
+  }
 
   entries.forEach(({ s, gi, mins, x, y, size }, rank) => {
     const sc = size * (0.92 + jitter(gi + seedOff + 7) * 0.16)
@@ -405,8 +430,10 @@ function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, 
     const extra = Math.min(3, Math.max(0, Math.floor(mins / 30) - 1 + (s.avg_align != null && s.avg_align >= 0.85 ? 1 : 0)))
     const t = el('g', {
       class: 'ff-tree', transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, tabindex: '0',
+      'data-y': y.toFixed(1),
       'aria-label': `${s.text}, ${sp.label}, ${mins} minutes${extra ? `, grove of ${extra + 1}` : ''}`,
-    }, svg)
+    })
+    svg.insertBefore(t, fgBand)
     const parts = []
     for (let c = 0; c < extra; c++) {
       const a = jitter(gi * 17 + c * 5 + seedOff) * Math.PI * 2
@@ -420,19 +447,28 @@ function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, 
     parts.push({ dy: 0, node: drawTree(sp.kind, fill, sc, uid, gi + seedOff) })
     parts.sort((a, b) => a.dy - b.dy)
     parts.forEach((part) => t.appendChild(part.node))
-    const show = () => {
+    // Hover lifts the tree above its neighbours and outlines it, so two trees
+    // that overlap still read as two; the card follows the pointer.
+    const lift = () => { t.classList.add('ff-hot'); svg.insertBefore(t, fgBand) }
+    const drop = () => { t.classList.remove('ff-hot'); restoreDepth(t) }
+    const show = (ev) => {
       fillTip(tip, s, sp.kind, extra)
       tip.style.display = 'block'
-      const r = svg.getBoundingClientRect()
-      const px = (x / 1000) * r.width, py = (y / 520) * r.height
-      tip.style.left = Math.min(Math.max(px - 100, 8), r.width - 260) + 'px'
-      tip.style.top = Math.max(py - 128, 8) + 'px'
+      if (ev && ev.clientX != null) {
+        placeTip(ev)
+      } else {
+        // Keyboard focus has no pointer: anchor the card above the tree.
+        const r = svg.getBoundingClientRect()
+        tip.style.left = Math.min(Math.max((x / 1000) * r.width - 100, 8), r.width - 260) + 'px'
+        tip.style.top = Math.max((y / 520) * r.height - 128, 8) + 'px'
+      }
     }
     const hide = () => { tip.style.display = 'none' }
-    t.addEventListener('pointerenter', show)
-    t.addEventListener('focus', show)
-    t.addEventListener('pointerleave', hide)
-    t.addEventListener('blur', hide)
+    t.addEventListener('pointerenter', (ev) => { lift(); show(ev) })
+    t.addEventListener('pointermove', placeTip)
+    t.addEventListener('focus', () => { lift(); show() })
+    t.addEventListener('pointerleave', () => { drop(); hide() })
+    t.addEventListener('blur', () => { drop(); hide() })
     const grows = t.querySelectorAll('.ff-grow')
     if (replay) {
       requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -445,7 +481,6 @@ function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, 
       grows.forEach((gEl) => gEl.classList.add('ff-instant', 'in'))
     }
   })
-  el('ellipse', { cx: 500, cy: 600, rx: 860, ry: 110, fill: 'var(--ff-fg-band)', opacity: '.85', filter: `url(#rough${uid})` }, svg)
 }
 
 // A data-derived personal line for a grove. In time these could come from the
@@ -915,7 +950,12 @@ const FOREST_CSS = `
 .ff-grove svg{display:block; width:100%; height:auto}
 .ff-tree{cursor:pointer}
 .ff-tree:focus-visible{outline:none}
-.ff-tree:hover .ff-grow,.ff-tree:focus-visible .ff-grow{filter:brightness(1.08) saturate(1.06)}
+.ff-tree.ff-hot .ff-sway [style],.ff-tree.ff-hot .ff-sway polygon[fill^="var("]{
+  stroke:#FFFFFF; stroke-width:1.6; paint-order:stroke; stroke-linejoin:round;
+  vector-effect:non-scaling-stroke; animation:ff-outline 1.1s ease-in-out infinite;
+}
+.dark .ff-tree.ff-hot .ff-sway [style],.dark .ff-tree.ff-hot .ff-sway polygon[fill^="var("]{stroke:#FFF3C4}
+@keyframes ff-outline{0%,100%{stroke-opacity:.35}50%{stroke-opacity:1}}
 .ff-grow{transform-box:fill-box; transform-origin:50% 100%; transform:scale(0)}
 .ff-grow.in{transform:scale(1); transition:transform .6s cubic-bezier(.34,1.5,.64,1)}
 .ff-grow.ff-instant{transition:none}

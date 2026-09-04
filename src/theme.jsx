@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 
 const ThemeContext = createContext({ isDark: false, toggle: () => {} })
 
@@ -24,8 +24,24 @@ export function ThemeProvider({ children }) {
 
   const isDark = choice === 'system' ? systemDark : choice === 'dark'
 
+  // Fade between themes: the transient .theme-fade class turns on color
+  // transitions only around a flip, so hovers keep their own timing and the
+  // initial paint doesn't animate.
+  const hasMounted = useRef(false)
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDark)
+    const root = document.documentElement
+    if (!hasMounted.current) {
+      hasMounted.current = true
+      root.classList.toggle('dark', isDark)
+      return
+    }
+    root.classList.add('theme-fade')
+    root.classList.toggle('dark', isDark)
+    const t = setTimeout(() => root.classList.remove('theme-fade'), 400)
+    return () => {
+      clearTimeout(t)
+      root.classList.remove('theme-fade')
+    }
   }, [isDark])
 
   // The button sets an explicit override to the opposite of what's showing.

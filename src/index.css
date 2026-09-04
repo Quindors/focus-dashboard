@@ -6,3 +6,17 @@
    fully controls appearance (incl. native form controls / scrollbars). */
 html { color-scheme: light; }
 html.dark { color-scheme: dark; }
+
+/* Applied transiently by ThemeProvider around a theme flip (see theme.jsx). */
+html.theme-fade,
+html.theme-fade *,
+html.theme-fade *::before,
+html.theme-fade *::after {
+  transition:
+    background-color 350ms ease,
+    color 350ms ease,
+    border-color 350ms ease,
+    fill 350ms ease,
+    stroke 350ms ease,
+    box-shadow 350ms ease !important;
+}
