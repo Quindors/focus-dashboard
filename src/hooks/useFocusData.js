@@ -3,6 +3,20 @@ import { fetchFocusRows, fetchCategories } from '../lib/dataSource'
 
 const ROWS_PER_MINUTE = 6  // decision_interval = 10s → 6 rows/min
 
+// "Productive only while declared": a neutral category (is_productive null —
+// Composition, say) counts as productive when the row was logged under a
+// focus session and scored at least partially on-intent. 0.5 is the monitor's
+// off-intent line (intention.off_intent_max), the same one that turns
+// off-intent productive work into off-task for Beeminder. This mirrors
+// monitor/beeminder.py (_DAY_QUERY / NEVER_DECLARED) — keep the two in step,
+// or the pie and the datapoint stop agreeing. Ambiguous and System never
+// qualify: they mean the monitor could not tell what the time was for, and a
+// session does not change that.
+const DECLARED_MIN_ALIGN = 0.5
+const NEVER_DECLARED = new Set(['ambiguous', 'system'])
+// Suffix on the pie's declared slices: "Composition (in session)".
+export const IN_SESSION = ' (in session)'
+
 // Polls the data source on an interval so the dashboard updates in near real
 // time as the monitor writes new rows. The first load toggles `loading`;
 // subsequent refreshes update silently and bump `lastUpdated`.
@@ -37,15 +51,31 @@ export function useFocusData(pollMs = 15000) {
           productiveMap[c.name] = c.is_productive
         }
 
+        // Declared neutral work: a real, neutral category, logged under a
+        // session, not off-intent. See the note at the top of the file.
+        const declared = (r) =>
+          Object.prototype.hasOwnProperty.call(productiveMap, r.category_name)
+          && productiveMap[r.category_name] == null
+          && !NEVER_DECLARED.has(String(r.category_name).toLowerCase())
+          && r.intention_id != null
+          && r.align_score != null && r.align_score >= DECLARED_MIN_ALIGN
+
+        // What a row counts as: its category's flag, or true for declared
+        // neutral work. null means it counts as neither.
+        const countsAs = (r) => {
+          const flag = productiveMap[r.category_name]
+          if (flag === true || flag === false) return flag
+          return declared(r) ? true : null
+        }
+
         // Productive % is productive time over ALL logged time - System and
         // Ambiguous rows included in the denominator. Every row is a slice of
         // the day at the screen; time the monitor could not place is still
         // time that was not spent on productive work. `counted` (rows with a
-        // definite productive/off-task flag) is kept for the split itself.
-        const counted = rows.filter(r => productiveMap[r.category_name] !== null
-                                      && productiveMap[r.category_name] !== undefined)
-        const productiveCount = counted.filter(r => productiveMap[r.category_name] === true).length
-        const unproductiveCount = counted.filter(r => productiveMap[r.category_name] === false).length
+        // definite productive/off-task verdict) is kept for the split itself.
+        const counted = rows.filter(r => countsAs(r) !== null)
+        const productiveCount = counted.filter(r => countsAs(r) === true).length
+        const unproductiveCount = counted.filter(r => countsAs(r) === false).length
 
         const today = {
           totalEvents: rows.length,                // all events, including System
@@ -59,20 +89,28 @@ export function useFocusData(pollMs = 15000) {
         }
 
         // --- Category breakdown for today ---
-        // Tally events per category. Include System/Ambiguous so the chart shows everything.
+        // Tally events per category. Include System/Ambiguous so the chart
+        // shows everything. Declared neutral work gets a slice of its own —
+        // "Composition (in session)", green — beside the plain neutral slice,
+        // so the pie shows both that the time counted and why.
         const tallies = {}
         for (const r of rows) {
-          const name = r.category_name || 'Unknown'
-          tallies[name] = (tallies[name] || 0) + 1
+          const category = r.category_name || 'Unknown'
+          const inSession = declared(r)
+          const key = inSession ? category + IN_SESSION : category
+          if (!tallies[key]) tallies[key] = { category, inSession, count: 0 }
+          tallies[key].count += 1
         }
 
         // Convert tally object into an array Recharts can consume.
         const byCategory = Object.entries(tallies)
-          .map(([name, count]) => ({
-            name,
-            count,
-            minutes: Math.round(count / ROWS_PER_MINUTE),
-            isProductive: productiveMap[name] ?? null,  // true / false / null
+          .map(([name, t]) => ({
+            name,                      // slice label: the category, suffixed when declared
+            category: t.category,      // the category itself
+            inSession: t.inSession,    // declared session work, counted as productive
+            count: t.count,
+            minutes: Math.round(t.count / ROWS_PER_MINUTE),
+            isProductive: t.inSession ? true : (productiveMap[t.category] ?? null),  // true / false / null
           }))
           .sort((a, b) => b.count - a.count)  // largest first
 
@@ -90,7 +128,7 @@ export function useFocusData(pollMs = 15000) {
             dailyTallies[key] = { total: 0, productive: 0, counted: 0 }
           }
           dailyTallies[key].total += 1
-          const isProd = productiveMap[r.category_name]
+          const isProd = countsAs(r)
           if (isProd === true || isProd === false) {
             dailyTallies[key].counted += 1
             if (isProd === true) dailyTallies[key].productive += 1

@@ -16,7 +16,7 @@ function colorFor(isProductive, isDark) {
 // covers the donut or the center total.
 function OutsideTooltip({ hover }) {
   if (!hover) return null
-  const { name, count, minutes, x, y, onLeft } = hover
+  const { name, count, minutes, inSession, x, y, onLeft } = hover
   return (
     <div
       className="absolute z-10 pointer-events-none bg-white dark:bg-slate-800 px-3 py-2 rounded shadow border border-slate-200 dark:border-slate-700 text-sm whitespace-nowrap"
@@ -28,6 +28,11 @@ function OutsideTooltip({ hover }) {
     >
       <div className="font-semibold text-slate-800 dark:text-slate-100">{name}</div>
       <div className="text-slate-500 dark:text-slate-300">{count} events · {fmtHM(minutes)}</div>
+      {inSession && (
+        <div className="text-xs text-emerald-600 dark:text-emerald-400">
+          declared work during a focus session · counts as productive
+        </div>
+      )}
     </div>
   )
 }
@@ -42,7 +47,7 @@ export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
   // Recharts hands the hovered sector's geometry to onMouseEnter — project a
   // point just past the outer edge at the slice's mid-angle.
   function showHover(sector) {
-    const { cx, cy, midAngle, outerRadius, name, count, minutes } = sector || {}
+    const { cx, cy, midAngle, outerRadius, name, count, minutes, inSession } = sector || {}
     if (cx == null || midAngle == null) return
     const r = (outerRadius || 124) + 12
     const cos = Math.cos(-midAngle * RADIAN)
@@ -50,6 +55,7 @@ export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
       name,
       count,
       minutes,
+      inSession,
       x: cx + r * cos,
       y: cy + r * Math.sin(-midAngle * RADIAN),
       onLeft: cos < 0,
@@ -109,7 +115,9 @@ export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
         </div>
       </div>
 
-      {/* Custom legend (so the donut fills the container and centering is exact). */}
+      {/* Custom legend (so the donut fills the container and centering is exact).
+          A neutral category's declared session work is its own slice, tagged
+          "in session" — that is the time a session turned productive. */}
       <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
         {byCategory.map((c, i) => (
           <span key={i} className="inline-flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
@@ -117,7 +125,12 @@ export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
               className="inline-block w-2.5 h-2.5 rounded-full"
               style={{ backgroundColor: colorFor(c.isProductive, isDark) }}
             />
-            {c.name}
+            {c.category ?? c.name}
+            {c.inSession && (
+              <span className="text-[10px] uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                in session
+              </span>
+            )}
           </span>
         ))}
       </div>

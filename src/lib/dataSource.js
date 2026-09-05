@@ -209,7 +209,10 @@ export async function saveBeeminder({
   })
 }
 
-// Rows since a given Date: [{ timestamp, category_name, confidence }, ...]
+// Rows since a given Date: [{ timestamp, category_name, ai_category,
+// confidence, intention_id, align_score }, ...]. intention_id and align_score
+// are null outside a focus session; useFocusData needs them to count declared
+// neutral work as productive, the way the monitor's Beeminder totals do.
 export async function fetchFocusRows(since) {
   return localFirst(
     () => apiGet(`/api/focus?since=${encodeURIComponent(localStamp(since))}`),
@@ -219,7 +222,7 @@ export async function fetchFocusRows(since) {
       // ISO/UTC instant would be off by the whole timezone offset.
       const { data, error } = await supabase
         .from('focus_logs')
-        .select('timestamp, category_name, human_label, confidence')
+        .select('timestamp, category_name, human_label, confidence, intention_id, align_score')
         .gte('timestamp', localStamp(since))
         .order('timestamp', { ascending: false })
       if (error) throw new Error(error.message)
@@ -229,6 +232,8 @@ export async function fetchFocusRows(since) {
         category_name: (r.human_label || '').trim() || r.category_name,
         ai_category: r.category_name,
         confidence: r.confidence,
+        intention_id: r.intention_id ?? null,
+        align_score: r.align_score ?? null,
       }))
     },
   )
