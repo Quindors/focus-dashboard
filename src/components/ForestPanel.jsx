@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { fetchSessions } from '../lib/dataSource'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { fetchCategories, fetchSessions, isMonitorLive, setSessionCategory } from '../lib/dataSource'
 
 // The forest tab: every finished session (completed or expired — the same set
 // Beeminder counts) is a tree, planted in the grove of the month it happened.
@@ -343,6 +343,11 @@ function fillTip(tip, s, kind, extra = 0) {
   const alignTxt = s.avg_align == null ? 'ALIGN —' : `ALIGN ${Math.round(s.avg_align * 100)}%`
   m2.textContent = `${durationMin(s)} min · ${alignTxt}${extra ? ` · grove of ${extra + 1}` : ''}`
   tip.append(t, m1, m2)
+  if (isMonitorLive()) {
+    const m3 = document.createElement('p'); m3.className = 'ff-tip-m ff-tip-hint'
+    m3.textContent = 'Click to change the category'
+    tip.append(m3)
+  }
 }
 
 // Groves that already played their grow-in this page load render instantly on
@@ -353,7 +358,7 @@ const grownGroves = new Set()
 // Landmark anchors: x, y, and a keep-clear radius the trees respect.
 const LANDMARK_SPOTS = { pond: [190, 492, 80], lantern: [880, 487, 36], bench: [115, 483, 40], cabin: [848, 408, 50], falls: [125, 404, 46] }
 
-function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, durCap) {
+function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, durCap, onPick) {
   svg.replaceChildren()
   defsFor(svg, uid)
   drawBackdrop(svg, uid, seedOff)
@@ -469,6 +474,8 @@ function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, 
     t.addEventListener('focus', () => { lift(); show() })
     t.addEventListener('pointerleave', () => { drop(); hide() })
     t.addEventListener('blur', () => { drop(); hide() })
+    t.addEventListener('click', () => { if (onPick) onPick(s) })
+    t.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && onPick) onPick(s) })
     const grows = t.querySelectorAll('.ff-grow')
     if (replay) {
       requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -606,13 +613,13 @@ function ambientSpans(idx) {
   return out
 }
 
-function Grove({ monthKey: key, sessions, idx, earnedHere, whisperText, durCap }) {
+function Grove({ monthKey: key, sessions, idx, earnedHere, whisperText, durCap, onPick }) {
   const svgRef = useRef(null)
   const tipRef = useRef(null)
   const sectionRef = useRef(null)
   useEffect(() => {
-    renderGroveSvg(svgRef.current, tipRef.current, sessions, 'g' + idx, idx * 57, earnedHere, key, durCap)
-  }, [sessions, idx, earnedHere, key, durCap])
+    renderGroveSvg(svgRef.current, tipRef.current, sessions, 'g' + idx, idx * 57, earnedHere, key, durCap, onPick)
+  }, [sessions, idx, earnedHere, key, durCap, onPick])
   // Only the grove actually on screen animates — sway, drift, mist, and the
   // ambient layer all pause in the other groves (and while scrolled away).
   useEffect(() => {
@@ -665,23 +672,50 @@ export default function ForestPanel() {
   const [activeKey, setActiveKey] = useState(null)
   const lastJson = useRef('')
 
+  // Only adopt a poll result that actually changed — a fresh-but-identical
+  // array every 60s would re-render every grove for nothing.
+  const load = useCallback(() =>
+    fetchSessions()
+      .then((rows) => {
+        const j = JSON.stringify(rows)
+        if (j !== lastJson.current) { lastJson.current = j; setSessions(rows) }
+        setError(null)
+      })
+      .catch((e) => setError(e.message)), [])
   useEffect(() => {
-    let alive = true
-    // Only adopt a poll result that actually changed — a fresh-but-identical
-    // array every 60s would re-render every grove for nothing.
-    const load = () =>
-      fetchSessions()
-        .then((rows) => {
-          if (!alive) return
-          const j = JSON.stringify(rows)
-          if (j !== lastJson.current) { lastJson.current = j; setSessions(rows) }
-          setError(null)
-        })
-        .catch((e) => { if (alive) setError(e.message) })
     load()
     const id = setInterval(load, 60000)
-    return () => { alive = false; clearInterval(id) }
+    return () => clearInterval(id)
+  }, [load])
+
+  // Clicking a tree opens a relabel card: the honest fix for sessions the
+  // gate never saw, instead of guessing from what the monitor logged.
+  const [cats, setCats] = useState([])
+  const [editing, setEditing] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [saveErr, setSaveErr] = useState(null)
+  useEffect(() => {
+    fetchCategories()
+      .then((c) => setCats(c.filter((x) => x.is_productive !== false)))
+      .catch(() => {})
   }, [])
+  const onPick = useCallback((s) => {
+    if (!isMonitorLive()) return
+    setSaveErr(null)
+    setEditing({ id: s.id, text: s.text, category: sessionCategory(s) || '' })
+  }, [])
+  const saveCategory = async () => {
+    setSaving(true)
+    setSaveErr(null)
+    try {
+      await setSessionCategory(editing.id, editing.category)
+      setEditing(null)
+      await load()
+    } catch (e) {
+      setSaveErr(e.message)
+    }
+    setSaving(false)
+  }
 
   const { keys, byMonth, milestones, earnedByMonth, durCap, sizeLegend, speciesLegend } = useMemo(() => {
     const rows = (sessions || []).filter((s) => s.started_at && s.ended_at)
@@ -819,6 +853,26 @@ export default function ForestPanel() {
         ))}
       </div>
 
+      {editing && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 shadow-md px-4 py-3 text-sm">
+          <span className="grow text-slate-700 dark:text-slate-200">
+            Recategorize <span className="font-semibold">“{editing.text}”</span>
+          </span>
+          <select
+            value={editing.category}
+            onChange={(e) => setEditing({ ...editing, category: e.target.value })}
+            aria-label="Session category"
+            className="rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1 text-sm text-slate-700 dark:text-slate-200"
+          >
+            <option value="">Uncategorized</option>
+            {cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+          </select>
+          <button onClick={saveCategory} disabled={saving} className="rounded-md bg-emerald-500 px-3 py-1 font-medium text-white hover:bg-emerald-600 disabled:opacity-50">Save</button>
+          <button onClick={() => setEditing(null)} disabled={saving} className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">Cancel</button>
+          {saveErr && <span className="w-full text-red-600 dark:text-red-400">{saveErr}</span>}
+        </div>
+      )}
+
       <div ref={scrollerRef} className="ff-scroller">
         {keys.map((k, i) => (
           <Grove
@@ -829,6 +883,7 @@ export default function ForestPanel() {
             earnedHere={earnedByMonth.get(k) || EMPTY}
             whisperText={whisper(i, keys, byMonth)}
             durCap={durCap}
+            onPick={onPick}
           />
         ))}
       </div>
@@ -1004,6 +1059,7 @@ const FOREST_CSS = `
 .ff-tip-t{font-weight:700; display:flex; align-items:center; gap:6px; margin-bottom:2px}
 .ff-tip-dot{width:9px; height:9px; border-radius:50%; flex:none}
 .ff-tip-m{color:#64748b; font-variant-numeric:tabular-nums}
+.ff-tip-hint{margin-top:4px; font-size:11.5px; opacity:.8}
 .dark .ff-tip-m{color:#94a3b8}
 @media (prefers-reduced-motion: reduce){
   .ff-grow{transform:scale(1)} .ff-grow.in{transition:none}

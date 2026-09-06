@@ -98,7 +98,10 @@ async function apiPost(path, body) {
   }
   if (!r.ok) {
     const data = await r.json().catch(() => ({}))
-    throw new Error(data.error || `${path} -> HTTP ${r.status}`)
+    const err = new Error(data.error || `${path} -> HTTP ${r.status}`)
+    err.status = r.status
+    err.data = data   // e.g. a 409 {needs_confirm, picked, suggested, reason}
+    throw err
   }
   return r.json()
 }
@@ -111,9 +114,22 @@ export async function fetchIntention() {
   return d.active
 }
 
-export async function startIntention(text, durationMin) {
-  const d = await apiPost('/api/intention', { text, duration_min: durationMin })
+// category: the user's pick (the monitor validates it and refuses an
+// unproductive one); omit it to let the intention gate decide. When the gate
+// disagrees with a pick the monitor answers 409 {needs_confirm, picked,
+// suggested, reason} once — resend with confirm=true to keep the pick anyway.
+export async function startIntention(text, durationMin, category, confirm = false) {
+  const body = { text, duration_min: durationMin }
+  if (category) body.category = category
+  if (confirm) body.confirm = true
+  const d = await apiPost('/api/intention', body)
   return d.active
+}
+
+// Relabel a finished session — the honest fix for the ones the gate never
+// saw. A write, so local API only; null clears the category.
+export async function setSessionCategory(id, category) {
+  return apiPost('/api/sessions/category', { id, category: category || null })
 }
 
 // status: 'completed' | 'abandoned'. Completing a session rolls straight into

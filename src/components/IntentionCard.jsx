@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   endBreak,
   endIntention,
+  fetchCategories,
   fetchStatus,
   isLocal,
   pauseIntention,
@@ -17,6 +18,24 @@ const DURATIONS = [30, 45, 60, 90, 120]
 const DEFAULT_DURATION = 45
 const CUSTOM = 'custom'
 const BREAK_MINUTES = 15
+
+// The category picked for an intention is remembered by its text, so typing
+// "piq 1" again pre-selects College Application. Per browser, best-effort.
+const MEMORY_KEY = 'cft.categoryByIntention'
+const normText = (t) => t.trim().toLowerCase().replace(/\s+/g, ' ')
+function rememberedCategory(text) {
+  try {
+    const map = JSON.parse(localStorage.getItem(MEMORY_KEY) || '{}')
+    return map[normText(text)] || ''
+  } catch { return '' }
+}
+function rememberCategory(text, category) {
+  try {
+    const map = JSON.parse(localStorage.getItem(MEMORY_KEY) || '{}')
+    map[normText(text)] = category
+    localStorage.setItem(MEMORY_KEY, JSON.stringify(map))
+  } catch { /* no storage: nothing to remember with */ }
+}
 
 // Color per state string from monitor/status.py — the same states the desktop
 // timer widget and the tray icon key off.
@@ -117,6 +136,11 @@ export default function IntentionCard() {
   const [custom, setCustom] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  // The category is the user's call: '' lets the gate decide, anything else
+  // is validated by the monitor and only double-checked by the gate.
+  const [category, setCategory] = useState('')
+  const [cats, setCats] = useState([])
+  const [pending, setPending] = useState(null)   // a 409 from the gate: {picked, suggested, reason}
   const alive = useRef(true)
 
   const refresh = useCallback(() => {
@@ -133,6 +157,13 @@ export default function IntentionCard() {
     const id = setInterval(refresh, 5000)
     return () => { alive.current = false; clearInterval(id) }
   }, [refresh])
+
+  useEffect(() => {
+    if (!isLocal) return
+    fetchCategories()
+      .then((c) => { if (alive.current) setCats(c.filter((x) => x.is_productive !== false)) })
+      .catch(() => {})
+  }, [])
 
   if (!isLocal || !ready || !snap) return null
 
@@ -156,10 +187,29 @@ export default function IntentionCard() {
     Number.isInteger(minutes) && minutes >= MIN_MINUTES && minutes <= MAX_MINUTES
   const canStart = !busy && text.trim() !== '' && minutesValid
 
-  const start = () => run(async () => {
-    await startIntention(text, minutes)
+  const onTextChange = (v) => {
+    setText(v)
+    setPending(null)
+    const remembered = rememberedCategory(v)
+    if (remembered) setCategory(remembered)
+  }
+  const launch = async (cat, confirm = false) => {
+    await startIntention(text, minutes, cat || undefined, confirm)
+    if (cat) rememberCategory(text, cat)
     setText('')
+    setPending(null)
+  }
+  const start = () => run(async () => {
+    try {
+      await launch(category)
+    } catch (e) {
+      // The gate disagreed with the pick: not an error, a question.
+      if (e.data?.needs_confirm) { setPending(e.data); return }
+      throw e
+    }
   })
+  const keepPick = () => run(() => launch(pending.picked, true))
+  const usePick = (cat) => run(async () => { setCategory(cat); await launch(cat) })
   const finish = (status) => run(() => endIntention(status))
   const takeBreak = () => run(() => startBreak(BREAK_MINUTES))
   const stopBreak = () => run(() => endBreak())
@@ -288,7 +338,7 @@ export default function IntentionCard() {
         <input
           type="text"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => onTextChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && canStart) start() }}
           placeholder="What do you intend to work on?"
           maxLength={300}
@@ -320,6 +370,15 @@ export default function IntentionCard() {
             Custom
           </button>
         </div>
+        <select
+          value={category}
+          onChange={(e) => { setCategory(e.target.value); setPending(null) }}
+          aria-label="Session category"
+          className="rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1.5 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        >
+          <option value="">Category: let the gate decide</option>
+          {cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+        </select>
         {duration === CUSTOM && (
           <div className="flex items-center gap-1.5">
             <input
@@ -354,6 +413,21 @@ export default function IntentionCard() {
           Start
         </button>
       </div>
+
+      {pending && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/30 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+          <span className="grow">
+            The gate reads this as <b>{pending.suggested}</b>, not {pending.picked}
+            {pending.reason ? ` — ${pending.reason}` : ''}. Your call.
+          </span>
+          <button onClick={() => usePick(pending.suggested)} disabled={busy} className="rounded-md bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700 disabled:opacity-50">
+            Use {pending.suggested}
+          </button>
+          <button onClick={keepPick} disabled={busy} className="rounded-md border border-amber-400 px-2.5 py-1 hover:bg-amber-100 dark:hover:bg-amber-500/20 disabled:opacity-50">
+            Keep {pending.picked}
+          </button>
+        </div>
+      )}
 
       <button
         onClick={takeBreak}
