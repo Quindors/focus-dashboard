@@ -6,6 +6,7 @@ import {
   fetchStatus,
   isLocal,
   pauseIntention,
+  pickableCategory,
   startBreak,
   startIntention,
 } from '../lib/dataSource'
@@ -161,7 +162,7 @@ export default function IntentionCard() {
   useEffect(() => {
     if (!isLocal) return
     fetchCategories()
-      .then((c) => { if (alive.current) setCats(c.filter((x) => x.is_productive !== false)) })
+      .then((c) => { if (alive.current) setCats(c.filter(pickableCategory)) })
       .catch(() => {})
   }, [])
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fetchCategories, fetchSessions, isMonitorLive, setSessionCategory } from '../lib/dataSource'
+import { fetchCategories, fetchSessions, isMonitorLive, pickableCategory, setSessionCategory } from '../lib/dataSource'
 
 // The forest tab: every finished session (completed or expired — the same set
 // Beeminder counts) is a tree, planted in the grove of the month it happened.
@@ -696,7 +696,7 @@ export default function ForestPanel() {
   const [saveErr, setSaveErr] = useState(null)
   useEffect(() => {
     fetchCategories()
-      .then((c) => setCats(c.filter((x) => x.is_productive !== false)))
+      .then((c) => setCats(c.filter(pickableCategory)))
       .catch(() => {})
   }, [])
   const onPick = useCallback((s) => {

@@ -255,6 +255,12 @@ export async function fetchFocusRows(since) {
   )
 }
 
+// A category a session can be declared as: anything not marked unproductive,
+// minus the classifier's own buckets (System, Ambiguous) — the monitor
+// protects those from deletion for the same reason.
+export const pickableCategory = (c) =>
+  c.is_productive !== false && !/^(system|ambiguous)$/i.test(c.name || '')
+
 // Categories: [{ name, is_productive }, ...]
 export async function fetchCategories() {
   return localFirst(
