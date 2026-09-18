@@ -9,6 +9,7 @@ import CorrectionsPanel from './components/CorrectionsPanel'
 import CategoriesPanel from './components/CategoriesPanel'
 import IntentionCard from './components/IntentionCard'
 import BeeminderCard from './components/BeeminderCard'
+import EmailReportCard from './components/EmailReportCard'
 import ForestPanel from './components/ForestPanel'
 import MonitorBanner from './components/MonitorBanner'
 
@@ -100,6 +101,7 @@ function App() {
           <>
             <IntentionCard />
             <BeeminderCard />
+            <EmailReportCard />
             {loading && <p className="text-slate-500 dark:text-slate-400">Loading…</p>}
             {error && <p className="text-red-600 dark:text-red-400">Error: {error}</p>}
             {data && (
