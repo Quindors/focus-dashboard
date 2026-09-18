@@ -22,7 +22,24 @@ function localStamp(d) {
 
 // Network-level failure: the monitor isn't running / not reachable. Kept
 // free of URLs and paths — it's shown to users as-is.
-const UNREACHABLE = "Can't reach the cft monitor. Is it running on this PC?"
+const UNREACHABLE = "The cft monitor isn't running on this PC."
+const UNREACHABLE_FIX =
+  'Start it from the tray, or use the button above — the dashboard reads your ' +
+  'hours straight off this machine, so nothing updates while it is closed.'
+
+// Errors from the monitor arrive as {error, fix}: what went wrong, and what to
+// do about it. Both travel on the thrown Error so any panel can lay them out
+// on two lines instead of running them together (see components/ErrorNote).
+function apiError(message, fix, extra) {
+  const err = new Error(message)
+  err.fix = fix || ''
+  if (extra) err.data = extra
+  return err
+}
+
+export function unreachableError() {
+  return apiError(UNREACHABLE, UNREACHABLE_FIX)
+}
 
 // --- monitor reachability ---------------------------------------------------
 // The hosted page reads from the monitor on this PC first and, when that is
@@ -62,10 +79,19 @@ async function apiGet(path) {
     r = await fetch(`${API_BASE}${path}`)
   } catch {
     setLive(false)
-    throw new Error(UNREACHABLE)
+    throw unreachableError()
   }
   setLive(true)
-  if (!r.ok) throw new Error(`${path} -> HTTP ${r.status}`)
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}))
+    throw apiError(
+      data.error || "The monitor couldn't answer that request.",
+      data.fix ||
+        'Refresh the page. If it keeps happening, restart the monitor from ' +
+        'the tray — cft.log next to the app has the details.',
+      data,
+    )
+  }
   return r.json()
 }
 
@@ -81,7 +107,7 @@ async function localFirst(local, cloud) {
       if (e.message !== UNREACHABLE || !supabase) throw e
     }
   }
-  if (!supabase) throw new Error(UNREACHABLE)
+  if (!supabase) throw unreachableError()
   return cloud()
 }
 
@@ -94,13 +120,20 @@ async function apiPost(path, body) {
       body: JSON.stringify(body),
     })
   } catch {
-    throw new Error(UNREACHABLE)
+    throw unreachableError()
   }
   if (!r.ok) {
     const data = await r.json().catch(() => ({}))
-    const err = new Error(data.error || `${path} -> HTTP ${r.status}`)
+    // data also carries the flags a caller may act on, e.g. a 409's
+    // {needs_confirm, picked, suggested, reason}.
+    const err = apiError(
+      data.error || "The monitor turned that down without saying why.",
+      data.fix ||
+        'Refresh the page and try again — cft.log next to the app has the ' +
+        'details if it keeps happening.',
+      data,
+    )
     err.status = r.status
-    err.data = data   // e.g. a 409 {needs_confirm, picked, suggested, reason}
     throw err
   }
   return r.json()
@@ -431,3 +464,45 @@ export async function updateCategory(name, { newName, description, is_productive
   }
   return { ok: true, name: target }
 }
+
+// The weekly email report is configured in the monitor's .env too, so: local
+// API only. The GET reports where it is going and when, never the SMTP
+// password; the POST logs in to the mail server before saving anything, so a
+// wrong app password comes back as a readable error instead of a silent
+// Monday with no mail.
+export async function fetchEmailReport() {
+  return apiGet('/api/email-report')
+}
+
+export async function saveEmailReport({
+  to, smtpHost, smtpPort, smtpUser, smtpPassword, sender, security, day, hour,
+  sendTest,
+}) {
+  return apiPost('/api/email-report', {
+    to,
+    smtp_host: smtpHost,
+    smtp_port: smtpPort,
+    smtp_user: smtpUser,
+    smtp_password: smtpPassword,
+    sender,
+    security,
+    day,
+    hour,
+    send_test: !!sendTest,
+  })
+}
+
+// Mail the last seven days right now / forget the recipients and the server.
+// Both answer with the fresh status, so a failure shows up as status.problem
+// rather than a thrown error.
+export async function sendEmailReportNow() {
+  return apiPost('/api/email-report/send', {})
+}
+
+export async function disconnectEmailReport() {
+  return apiPost('/api/email-report/disconnect', {})
+}
+
+// The report exactly as it would arrive. A whole HTML document, so the card
+// opens it in a tab rather than fetching it.
+export const emailReportPreviewUrl = () => `${API_BASE}/api/email-report/preview`

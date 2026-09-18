@@ -10,6 +10,7 @@ import {
   startBreak,
   startIntention,
 } from '../lib/dataSource'
+import ErrorNote from './ErrorNote'
 
 // Mirrors the monitor's own validation (monitor/intentions.py). A focus
 // session is a real block of work, so half an hour is the floor.
@@ -178,7 +179,7 @@ export default function IntentionCard() {
       await fn()
       refresh()
     } catch (e) {
-      setError(e.message)
+      setError(e)
     }
     setBusy(false)
   }
@@ -245,7 +246,7 @@ export default function IntentionCard() {
             End break now
           </button>
         </div>
-        {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+        <ErrorNote error={error} className="mt-3" />
       </div>
     )
   }
@@ -322,7 +323,7 @@ export default function IntentionCard() {
             </button>
           </div>
         </div>
-        {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+        <ErrorNote error={error} className="mt-3" />
       </div>
     )
   }
@@ -438,7 +439,7 @@ export default function IntentionCard() {
         or take a {BREAK_MINUTES}-minute break now
       </button>
 
-      {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      <ErrorNote error={error} className="mt-3" />
     </div>
   )
 }

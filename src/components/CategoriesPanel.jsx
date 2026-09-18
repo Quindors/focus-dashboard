@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import ErrorNote from './ErrorNote'
 import { fetchCategories, addCategory, updateCategory, deleteCategory } from '../lib/dataSource'
 
 // The classifier needs these two: the prompt defaults to Ambiguous, and the
@@ -191,7 +192,7 @@ export default function CategoriesPanel() {
       setCategories(await fetchCategories())
       setError(null)
     } catch (e) {
-      setError(e.message || String(e))
+      setError(e)
     }
   }, [])
 
@@ -205,7 +206,7 @@ export default function CategoriesPanel() {
       setError(null)
       return true
     } catch (e) {
-      setError(`Could not add category: ${e.message || e}`)
+      setError(e)
       return false
     } finally {
       setBusyName(null)
@@ -226,7 +227,7 @@ export default function CategoriesPanel() {
       )
     } catch (e) {
       setNotice(null)
-      setError(`Could not delete category: ${e.message || e}`)
+      setError(e)
     } finally {
       setBusyName(null)
     }
@@ -239,7 +240,7 @@ export default function CategoriesPanel() {
       await load()
       setError(null)
     } catch (e) {
-      setError(`Could not save category: ${e.message || e}`)
+      setError(e)
     } finally {
       setBusyName(null)
     }
@@ -259,7 +260,7 @@ export default function CategoriesPanel() {
 
       <AddCategoryForm onAdd={handleAdd} busy={busyName === ''} />
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
+      <ErrorNote error={error} className="mb-3" />
       {notice && <p className="text-sm text-emerald-600 dark:text-emerald-400 mb-3">{notice}</p>}
       {categories === null && !error && <p className="text-slate-500 dark:text-slate-400 text-sm">Loading…</p>}
 

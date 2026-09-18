@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchCorrections, fetchCategories, updateCorrectionRule } from '../lib/dataSource'
+import ErrorNote from './ErrorNote'
 
 // "6:31 PM" today, "Jul 15 6:31 PM" otherwise.
 function timeLabel(ts) {
@@ -85,7 +86,7 @@ export default function CorrectionsPanel() {
       setCategories(cats)
       setError(null)
     } catch (e) {
-      setError(e.message || String(e))
+      setError(e)
     } finally {
       if (!silent) setRefreshing(false)
     }
@@ -107,7 +108,7 @@ export default function CorrectionsPanel() {
       )
       setError(null)
     } catch (e) {
-      setError(`Could not update correction: ${e.message || e}`)
+      setError(e)
     } finally {
       setBusyTitles((s) => {
         const next = new Set(s)
@@ -137,7 +138,7 @@ export default function CorrectionsPanel() {
         windows). Change a rule here, or remove it to let the AI judge that window again.
       </p>
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
+      <ErrorNote error={error} className="mb-3" />
       {rules === null && !error && <p className="text-slate-500 dark:text-slate-400 text-sm">Loading…</p>}
       {rules !== null && rules.length === 0 && (
         <p className="text-slate-400 dark:text-slate-500 text-sm">

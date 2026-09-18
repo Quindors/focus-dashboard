@@ -6,6 +6,7 @@ import {
   isLocal,
   saveBeeminder,
 } from '../lib/dataSource'
+import ErrorNote from './ErrorNote'
 
 // Beeminder setup and health, in one card.
 //
@@ -140,7 +141,7 @@ export default function BeeminderCard() {
       await refresh()
       if (after) after()
     } catch (err) {
-      setError(err.message)
+      setError(err)
     }
     setBusy(false)
   }
@@ -187,8 +188,13 @@ export default function BeeminderCard() {
             Beeminder isn't receiving your hours
           </div>
           <p className="text-xs text-red-600/90 dark:text-red-300/80 mt-0.5 max-w-prose">
-            {status.last_push.error}
+            {problem.message}
           </p>
+          {problem.fix && (
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-prose">
+              {problem.fix}
+            </p>
+          )}
           <div className="flex items-center gap-3 mt-3 flex-wrap">
             <button onClick={() => { setError(null); setView('form') }} disabled={busy} className={primaryBtn}>
               Reconnect
@@ -196,7 +202,7 @@ export default function BeeminderCard() {
             <button onClick={disconnect} disabled={busy} className={quietBtn}>
               Disconnect
             </button>
-            {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
+            <ErrorNote error={error} inline />
           </div>
         </div>
       )
@@ -221,7 +227,7 @@ export default function BeeminderCard() {
             <button onClick={disconnect} disabled={busy} className={quietBtn}>
               Disconnect
             </button>
-            {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
+            <ErrorNote error={error} inline />
           </div>
         </div>
       )
@@ -372,7 +378,7 @@ export default function BeeminderCard() {
             </span>
           )}
           {error && (
-            <span className="text-xs text-red-600 dark:text-red-400">{error}</span>
+            <ErrorNote error={error} inline />
           )}
         </div>
       </form>

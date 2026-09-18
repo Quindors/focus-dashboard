@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchRecentEvents, fetchCategories, saveCorrections } from '../lib/dataSource'
+import ErrorNote from './ErrorNote'
 
 const POLL_MS = 15000
 const GROUP_GAP_MS = 15 * 60 * 1000 // >15 min between events breaks a group
@@ -169,7 +170,7 @@ export default function ReviewPanel() {
       setCategories(cats)
       setError(null)
     } catch (e) {
-      setError(e.message || String(e))
+      setError(e)
     } finally {
       if (!silent) setRefreshing(false)
     }
@@ -206,7 +207,7 @@ export default function ReviewPanel() {
       setEvents((rows) => rows.map((r) => (idSet.has(r.id) ? { ...r, human_label: label } : r)))
       setError(null)
     } catch (e) {
-      setError(`Could not save correction: ${e.message || e}`)
+      setError(e)
     } finally {
       setSavingKeys((s) => {
         const next = new Set(s)
@@ -255,7 +256,7 @@ export default function ReviewPanel() {
         {correctedCount > 0 && ` ${correctedCount} corrected.`}
       </p>
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
+      <ErrorNote error={error} className="mb-3" />
       {events === null && !error && <p className="text-slate-500 dark:text-slate-400 text-sm">Loading…</p>}
       {events !== null && shown.length === 0 && (
         <p className="text-slate-400 dark:text-slate-500 text-sm">No activity to review.</p>

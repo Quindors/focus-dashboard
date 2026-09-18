@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchCategories, fetchSessions, isMonitorLive, pickableCategory, setSessionCategory } from '../lib/dataSource'
+import ErrorNote from './ErrorNote'
 
 // The forest tab: every finished session (completed or expired — the same set
 // Beeminder counts) is a tree, planted in the grove of the month it happened.
@@ -681,7 +682,7 @@ export default function ForestPanel() {
         if (j !== lastJson.current) { lastJson.current = j; setSessions(rows) }
         setError(null)
       })
-      .catch((e) => setError(e.message)), [])
+      .catch((e) => setError(e)), [])
   useEffect(() => {
     load()
     const id = setInterval(load, 60000)
@@ -786,7 +787,7 @@ export default function ForestPanel() {
     return (
       <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md">
         <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Forest</h2>
-        <p className="text-red-600 dark:text-red-400">{error}</p>
+        <ErrorNote error={error} />
       </div>
     )
   }
