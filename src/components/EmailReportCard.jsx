@@ -42,13 +42,50 @@ const quietBtn =
   'text-xs px-2 py-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:text-slate-600 ' +
   'dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 transition-colors'
 
-// Host, port and security for the three mail providers almost everyone is
-// actually using; "Other" leaves the fields alone for anything else.
+// Nobody needs to run a mail server to get this report — they send through
+// the account they already have. Picking a provider answers the host, port
+// and encryption questions on their behalf, so those three never have to be
+// asked; "Something else" is the only case that still has to.
+//
+// The app-password help is per-provider because "use an app password" is
+// useless advice on its own: what makes it actionable is the page it lives on
+// and the one prerequisite that trips everyone up.
 const PROVIDERS = [
-  { id: 'gmail', label: 'Gmail', host: 'smtp.gmail.com', port: '587', security: 'starttls' },
-  { id: 'outlook', label: 'Outlook', host: 'smtp-mail.outlook.com', port: '587', security: 'starttls' },
-  { id: 'icloud', label: 'iCloud', host: 'smtp.mail.me.com', port: '587', security: 'starttls' },
-  { id: 'other', label: 'Other' },
+  {
+    id: 'gmail',
+    label: 'Gmail',
+    host: 'smtp.gmail.com',
+    port: '587',
+    security: 'starttls',
+    example: 'you@gmail.com',
+    appPasswordUrl: 'https://myaccount.google.com/apppasswords',
+    appPasswordSteps: 'Type any name, then copy the 16 characters Google ' +
+      'shows you. If that page says it is unavailable, turn on 2-Step ' +
+      'Verification first and go back.',
+  },
+  {
+    id: 'outlook',
+    label: 'Outlook',
+    host: 'smtp-mail.outlook.com',
+    port: '587',
+    security: 'starttls',
+    example: 'you@outlook.com',
+    appPasswordUrl: 'https://account.microsoft.com/security',
+    appPasswordSteps: 'Under Advanced security options, create a new app ' +
+      'password and copy it.',
+  },
+  {
+    id: 'icloud',
+    label: 'iCloud',
+    host: 'smtp.mail.me.com',
+    port: '587',
+    security: 'starttls',
+    example: 'you@icloud.com',
+    appPasswordUrl: 'https://account.apple.com',
+    appPasswordSteps: 'Under Sign-In and Security, choose App-Specific ' +
+      'Passwords and make one.',
+  },
+  { id: 'other', label: 'Something else', example: 'you@example.com' },
 ]
 
 const DAYS = [
@@ -123,6 +160,14 @@ export default function EmailReportCard() {
   const [day, setDay] = useState('mon')
   const [hour, setHour] = useState('9')
   const [sendTest, setSendTest] = useState(true)
+  // Who, if anyone, was just sent a one-off introduction. Worth saying out
+  // loud: an email went to someone else on the user's behalf.
+  const [introduced, setIntroduced] = useState([])
+  // Server settings are hidden unless the provider is unknown or the stored
+  // setup is unusual. Three fields nobody can answer from memory, sitting in
+  // plain sight, read as three questions you have failed rather than three
+  // answers already filled in.
+  const [advanced, setAdvanced] = useState(false)
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(DISMISS_KEY) === '1'
   )
@@ -160,6 +205,9 @@ export default function EmailReportCard() {
       if (status.hour !== undefined && status.hour !== null) setHour(String(status.hour))
       const known = PROVIDERS.find((p) => p.host === status.smtp_host)
       setProvider(known ? known.id : 'other')
+      // Open the server settings for a setup the simple form cannot express:
+      // an unknown provider, or a From address that isn't the login.
+      setAdvanced(!known || (!!status.sender && status.sender !== status.smtp_user))
     }
     setSmtpPassword('')
     setError(null)
@@ -203,6 +251,13 @@ export default function EmailReportCard() {
     }
   }
 
+  // In the simple form one field answers two questions, because for every
+  // provider here the address you send from IS the address you sign in with.
+  const setAccount = (value) => {
+    setSmtpUser(value)
+    setSender(value)
+  }
+
   const submit = (e) => {
     e.preventDefault()
     run(
@@ -210,7 +265,11 @@ export default function EmailReportCard() {
         to, smtpHost, smtpPort, smtpUser, smtpPassword, sender, security,
         day, hour, sendTest,
       }),
-      () => { setSmtpPassword(''); setView('done') }
+      (result) => {
+        setSmtpPassword('')
+        setIntroduced((result && result.introduced) || [])
+        setView('done')
+      }
     )
   }
 
@@ -225,6 +284,12 @@ export default function EmailReportCard() {
           Weekly report set up — {recipientLabel(status.recipients)} will get it every{' '}
           {status.day_name} at {String(status.hour).padStart(2, '0')}:00.
           {sendTest && ' A copy just went out.'}
+          {introduced.length > 0 && (
+            <span className="block mt-1 text-emerald-700/80 dark:text-emerald-300/80">
+              {introduced.length === 1 ? `${introduced[0]} was` : `${introduced.length} new recipients were`}
+              {' '}sent a short note saying you set this up and that replying stops it.
+            </span>
+          )}
         </span>
         <button onClick={() => setView('auto')} className={quietBtn}>Done</button>
       </div>
@@ -279,10 +344,14 @@ export default function EmailReportCard() {
             </button>
           </div>
         </div>
-        {(error || note) && (
-          <p className={`text-xs mt-2 ${error ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-            {error || note}
-          </p>
+        {/* An error is {message, fix} or an Error, never a string - it has to
+            go through ErrorNote. Rendering it directly unmounts the whole
+            app (React #31), which is what a bad "Send from" used to do:
+            saving succeeded, the test send did not, and this strip replaced
+            the form with the object still in `error`. */}
+        <ErrorNote error={error} className="mt-2" />
+        {!error && note && (
+          <p className="text-xs mt-2 text-emerald-600 dark:text-emerald-400">{note}</p>
         )}
       </div>
     )
@@ -296,6 +365,8 @@ export default function EmailReportCard() {
   // first-time setup still has to supply it — unless the server takes no
   // login at all, in which case there is nothing to supply.
   const needsPassword = !!smtpUser.trim() && !smtpPassword.trim() && !configured
+  const chosen = PROVIDERS.find((p) => p.id === provider) || PROVIDERS[0]
+  const showServer = provider === 'other' || advanced
   const incomplete =
     !to.trim() || !smtpHost.trim() || needsPassword ||
     (!sender.trim() && !smtpUser.trim())
@@ -312,16 +383,8 @@ export default function EmailReportCard() {
             the split by category, every day's line and every focus session — to
             whoever you name. Yourself, a parent, a study partner, a coach. The
             numbers are the same ones Beeminder is sent, corrections included.
-            {' '}Gmail needs an{' '}
-            <a
-              href="https://myaccount.google.com/apppasswords"
-              target="_blank"
-              rel="noreferrer"
-              className={linkClass}
-            >
-              app password
-            </a>
-            , not your account password.
+            It sends through the email account you already have; there is
+            nothing to set up or sign up for.
           </p>
         </div>
         {configured ? (
@@ -335,6 +398,9 @@ export default function EmailReportCard() {
         )}
       </div>
 
+      <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+        Which email account should it send from?
+      </div>
       <div className="flex gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 w-fit mb-3" role="group" aria-label="Mail provider">
         {PROVIDERS.map((p) => (
           <button
@@ -370,79 +436,125 @@ export default function EmailReportCard() {
           </Field>
         </div>
 
-        <Field label="Mail server">
-          <input
-            value={smtpHost}
-            onChange={(e) => { setSmtpHost(e.target.value); setProvider('other') }}
-            disabled={busy}
-            placeholder="smtp.gmail.com"
-            autoComplete="off"
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Port">
-          <input
-            value={smtpPort}
-            onChange={(e) => setSmtpPort(e.target.value)}
-            disabled={busy}
-            type="number"
-            min="1"
-            max="65535"
-            autoComplete="off"
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Encryption">
-          <Select
-            value={security}
-            onChange={(e) => setSecurity(e.target.value)}
-            disabled={busy}
-            options={[
-              { id: 'starttls', label: 'STARTTLS (587)' },
-              { id: 'ssl', label: 'SSL/TLS (465)' },
-              { id: 'none', label: 'None' },
-            ]}
-          />
-        </Field>
-        <Field label="Send from">
-          <input
-            value={sender}
-            onChange={(e) => setSender(e.target.value)}
-            disabled={busy}
-            placeholder={smtpUser || 'me@example.com'}
-            autoComplete="off"
-            className={inputClass}
-          />
-        </Field>
+        {!showServer && (
+          <div className="sm:col-span-2">
+            <Field
+              label={`Your ${chosen.label} address`}
+              hint="The report is sent from here, and this is what signs in."
+            >
+              <input
+                value={smtpUser}
+                onChange={(e) => setAccount(e.target.value)}
+                disabled={busy}
+                placeholder={chosen.example}
+                autoComplete="off"
+                className={inputClass}
+              />
+            </Field>
+          </div>
+        )}
+
+        {showServer && (
+          <>
+            <div className="sm:col-span-2">
+              <Field label="Sign in as" hint="Usually your full email address.">
+                <input
+                  value={smtpUser}
+                  onChange={(e) => setSmtpUser(e.target.value)}
+                  disabled={busy}
+                  placeholder={chosen.example}
+                  autoComplete="off"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+            <div className="sm:col-span-2">
+              <Field label="Send from" hint="Leave blank to use the address above.">
+                <input
+                  value={sender}
+                  onChange={(e) => setSender(e.target.value)}
+                  disabled={busy}
+                  placeholder={smtpUser || chosen.example}
+                  autoComplete="off"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+          </>
+        )}
 
         <div className="sm:col-span-2">
-          <Field label="Mail server username">
-            <input
-              value={smtpUser}
-              onChange={(e) => setSmtpUser(e.target.value)}
-              disabled={busy}
-              placeholder="me@example.com"
-              autoComplete="off"
-              className={inputClass}
-            />
-          </Field>
-        </div>
-        <div className="sm:col-span-2">
           <Field
-            label={configured ? 'App password (blank = keep current)' : 'App password'}
-            hint="Stored in the .env next to the monitor, on this machine only."
+            label={configured ? 'App password (blank keeps the current one)' : 'App password'}
+            hint={
+              chosen.appPasswordUrl ? (
+                <>
+                  Not your normal password — a one-off code just for this.{' '}
+                  <a href={chosen.appPasswordUrl} target="_blank" rel="noreferrer" className={linkClass}>
+                    Make one here
+                  </a>
+                  . {chosen.appPasswordSteps} Paste it exactly as shown — the
+                  spaces are only there to make it readable and come off on
+                  their own. It is stored on this PC only, and you can revoke
+                  it any time without changing your real password.
+                </>
+              ) : (
+                "Whatever your mail server wants for sending. Stored on this PC only."
+              )
+            }
           >
             <input
               value={smtpPassword}
               onChange={(e) => setSmtpPassword(e.target.value)}
               disabled={busy}
               type="password"
-              placeholder={configured ? 'unchanged' : '16 characters from Google'}
+              placeholder={configured ? 'unchanged' : 'paste it here'}
               autoComplete="new-password"
               className={inputClass}
             />
           </Field>
         </div>
+
+        {showServer && (
+          <>
+            <Field label="Mail server" hint="Your provider's outgoing (SMTP) server.">
+              <input
+                value={smtpHost}
+                onChange={(e) => { setSmtpHost(e.target.value); setProvider('other') }}
+                disabled={busy}
+                placeholder="smtp.example.com"
+                autoComplete="off"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Port">
+              <input
+                value={smtpPort}
+                onChange={(e) => setSmtpPort(e.target.value)}
+                disabled={busy}
+                type="number"
+                min="1"
+                max="65535"
+                autoComplete="off"
+                className={inputClass}
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Encryption" hint="587 goes with STARTTLS, 465 with SSL/TLS.">
+                <Select
+                  value={security}
+                  onChange={(e) => setSecurity(e.target.value)}
+                  disabled={busy}
+                  options={[
+                    { id: 'starttls', label: 'STARTTLS (port 587)' },
+                    { id: 'ssl', label: 'SSL/TLS (port 465)' },
+                    { id: 'none', label: 'None' },
+                  ]}
+                />
+              </Field>
+            </div>
+          </>
+        )}
 
         <div className="sm:col-span-2">
           <Field label="Send it on">
@@ -454,6 +566,21 @@ export default function EmailReportCard() {
             <Select value={hour} onChange={(e) => setHour(e.target.value)} disabled={busy} options={HOURS} />
           </Field>
         </div>
+
+        {provider !== 'other' && (
+          <div className="sm:col-span-4 -mt-1">
+            <button
+              type="button"
+              onClick={() => setAdvanced((a) => !a)}
+              disabled={busy}
+              className="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 underline"
+            >
+              {advanced
+                ? 'Hide server settings'
+                : 'Sending from a different address, or through another server?'}
+            </button>
+          </div>
+        )}
 
         <div className="sm:col-span-4 flex items-center gap-3 flex-wrap">
           <button type="submit" disabled={busy || incomplete} className={primaryBtn}>
@@ -476,7 +603,9 @@ export default function EmailReportCard() {
           )}
           {!busy && (
             <span className="text-xs text-slate-400 dark:text-slate-500">
-              Nothing is saved until the mail server accepts the login.
+              Nothing is saved until {chosen.label === 'Something else'
+                ? 'the mail server'
+                : chosen.label} accepts the login.
             </span>
           )}
           <ErrorNote error={error} inline />

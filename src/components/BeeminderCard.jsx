@@ -42,21 +42,24 @@ const quietBtn =
   'text-xs px-2 py-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:text-slate-600 ' +
   'dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 transition-colors'
 
-function Field({ label, children }) {
+function Field({ label, hint, children }) {
   return (
     <label className="block">
       <span className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
         {label}
       </span>
       {children}
+      {hint && (
+        <span className="block text-[11px] text-slate-400 dark:text-slate-500 mt-1">{hint}</span>
+      )}
     </label>
   )
 }
 
 function ModePick({ mode, setMode, disabled }) {
   const options = [
-    { id: 'create', label: 'Create a goal for me' },
-    { id: 'existing', label: 'I already have a goal' },
+    { id: 'create', label: 'Make me a goal' },
+    { id: 'existing', label: 'I already have one' },
   ]
   return (
     <div className="flex gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 w-fit" role="group" aria-label="Setup mode">
@@ -263,21 +266,13 @@ export default function BeeminderCard() {
             </p>
           )}
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 max-w-prose">
-            Push your daily focus hours to a{' '}
+            Put money behind your focus hours.{' '}
             <a href="https://www.beeminder.com" target="_blank" rel="noreferrer" className={linkClass}>
               Beeminder
             </a>{' '}
-            goal that charges you when you slack. You need your own Beeminder
-            account; grab your token from{' '}
-            <a
-              href="https://www.beeminder.com/api/v1/auth_token.json"
-              target="_blank"
-              rel="noreferrer"
-              className={linkClass}
-            >
-              beeminder.com/api/v1/auth_token.json
-            </a>
-            .
+            tracks a daily commitment and charges you when you fall behind; cft
+            sends it your productive hours every few minutes. You need a free
+            Beeminder account of your own first.
           </p>
         </div>
         {goalMissing ? (
@@ -296,11 +291,26 @@ export default function BeeminderCard() {
       </div>
 
       <div className="mb-3">
+        <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+          Do you already have a Beeminder goal for this?
+        </div>
         <ModePick mode={mode} setMode={setMode} disabled={busy} />
       </div>
 
+      {creating && (
+        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 max-w-prose">
+          This makes a goal on your own Beeminder account that counts the hours
+          cft says were productive. Miss the rate you set and Beeminder charges
+          you — so start gentle, and put a $0 pledge on it until the numbers
+          look right.
+        </p>
+      )}
+
       <form onSubmit={submit} className="grid gap-3 sm:grid-cols-4">
-        <Field label="Beeminder username">
+        <Field
+          label="Your Beeminder username"
+          hint="The name in your profile address: beeminder.com/your-name."
+        >
           <input
             value={user}
             onChange={(e) => setUser(e.target.value)}
@@ -310,18 +320,39 @@ export default function BeeminderCard() {
             className={inputClass}
           />
         </Field>
-        <Field label={configured ? 'Auth token (blank = keep current)' : 'Auth token'}>
+        <Field
+          label={configured ? 'Auth token (blank keeps the current one)' : 'Auth token'}
+          hint={
+            <>
+              Not your password — a long code Beeminder gives you.{' '}
+              <a
+                href="https://www.beeminder.com/api/v1/auth_token.json"
+                target="_blank"
+                rel="noreferrer"
+                className={linkClass}
+              >
+                Open this while signed in
+              </a>{' '}
+              and copy the value it shows.
+            </>
+          }
+        >
           <input
             value={token}
             onChange={(e) => setToken(e.target.value)}
             disabled={busy}
             type="password"
-            placeholder={configured ? 'unchanged' : 'from the link above'}
+            placeholder={configured ? 'unchanged' : 'paste it here'}
             autoComplete="off"
             className={inputClass}
           />
         </Field>
-        <Field label={creating ? 'New goal name' : 'Existing goal slug (hours)'}>
+        <Field
+          label={creating ? 'Name for the new goal' : 'Which goal?'}
+          hint={creating
+            ? 'Lowercase letters and dashes. It becomes part of the address.'
+            : "The short name in its address: beeminder.com/you/this-bit. It has to be a Do More goal measured in hours."}
+        >
           <input
             value={focusGoal}
             onChange={(e) => setFocusGoal(e.target.value)}
@@ -333,7 +364,10 @@ export default function BeeminderCard() {
         </Field>
         {creating && (
           <>
-            <Field label="Hours per day to commit">
+            <Field
+              label="Hours a day you're committing to"
+              hint="Start lower than you think. You can raise it later; lowering it takes a week."
+            >
               <input
                 value={hoursPerDay}
                 onChange={(e) => setHoursPerDay(e.target.value)}
@@ -346,7 +380,10 @@ export default function BeeminderCard() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Days of leeway to start">
+            <Field
+              label="Days of slack to start with"
+              hint="How many days you could do nothing before the goal bites."
+            >
               <input
                 value={leewayDays}
                 onChange={(e) => setLeewayDays(e.target.value)}
@@ -370,11 +407,9 @@ export default function BeeminderCard() {
                 ? 'Create goal & connect'
                 : 'Connect'}
           </button>
-          {creating && !busy && (
+          {!busy && (
             <span className="text-xs text-slate-400 dark:text-slate-500">
-              Makes a Do More goal (units: hours) on your account. Leeway is
-              safety buffer: days you could do nothing before a derail. Start
-              easy — you can raise the rate on beeminder.com later.
+              Nothing is saved until Beeminder accepts the token.
             </span>
           )}
           {error && (
