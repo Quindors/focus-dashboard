@@ -31,19 +31,26 @@ export function useFocusData(pollMs = 15000) {
 
     async function fetchAll() {
       try {
-        // Today's rows: from midnight local time onwards.
-        const startOfDay = new Date()
-        startOfDay.setHours(0, 0, 0, 0)
-        const rows = await fetchFocusRows(startOfDay)
-
-        // Last 7 days (today + 6 prior) for the weekly trend.
+        // Last 7 days (today + 6 prior) for the weekly trend, and the
+        // categories so we know which are productive. Two requests, in
+        // flight together — this used to be three in a row (today, then the
+        // week, then categories), and on the hosted page each one is a
+        // cross-origin round trip to the monitor.
         const startOfWeek = new Date()
         startOfWeek.setHours(0, 0, 0, 0)
         startOfWeek.setDate(startOfWeek.getDate() - 6)
-        const weekRows = await fetchFocusRows(startOfWeek)
+        const [weekRows, cats] = await Promise.all([
+          fetchFocusRows(startOfWeek),
+          fetchCategories(),
+        ])
 
-        // Categories so we know which are productive.
-        const cats = await fetchCategories()
+        // Today's rows are the week's from local midnight on. Timestamps are
+        // naive local "YYYY-MM-DD HH:MM:SS" strings from both sources, so
+        // the same string comparison the API does works here.
+        const startOfDay = new Date()
+        startOfDay.setHours(0, 0, 0, 0)
+        const todayKey = `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`
+        const rows = weekRows.filter((r) => String(r.timestamp || '').slice(0, 10) >= todayKey)
 
         // Build a lookup: { "Deep Work": true, "Social Media": false, ... }
         const productiveMap = {}
