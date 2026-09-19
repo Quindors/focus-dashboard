@@ -11,12 +11,14 @@ import IntentionCard from './components/IntentionCard'
 import BeeminderCard from './components/BeeminderCard'
 import EmailReportCard from './components/EmailReportCard'
 import ForestPanel from './components/ForestPanel'
+import ProjectsPanel from './components/ProjectsPanel'
 import MonitorBanner from './components/MonitorBanner'
 
 function TabBar({ tab, setTab }) {
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'forest', label: 'Forest' },
+    { id: 'projects', label: 'Projects' },
     { id: 'review', label: 'Review' },
     { id: 'categories', label: 'Categories' },
   ]
@@ -117,6 +119,8 @@ function App() {
         )}
 
         {tab === 'forest' && <ForestPanel />}
+
+        {tab === 'projects' && <ProjectsPanel />}
 
         {tab === 'review' && (
           <>

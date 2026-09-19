@@ -3,6 +3,7 @@ import {
   endBreak,
   endIntention,
   fetchCategories,
+  fetchProjects,
   fetchStatus,
   isLocal,
   pauseIntention,
@@ -37,6 +38,28 @@ function rememberCategory(text, category) {
     map[normText(text)] = category
     localStorage.setItem(MEMORY_KEY, JSON.stringify(map))
   } catch { /* no storage: nothing to remember with */ }
+}
+// The project is remembered the same way, by intention text — and the last
+// one picked carries over to the next session, since the next sitting is
+// usually the same work.
+const PROJECT_MEMORY_KEY = 'cft.projectByIntention'
+const LAST_PROJECT_KEY = 'cft.lastProject'
+function rememberedProject(text) {
+  try {
+    const map = JSON.parse(localStorage.getItem(PROJECT_MEMORY_KEY) || '{}')
+    return map[normText(text)] || ''
+  } catch { return '' }
+}
+function rememberProject(text, projectId) {
+  try {
+    const map = JSON.parse(localStorage.getItem(PROJECT_MEMORY_KEY) || '{}')
+    map[normText(text)] = projectId
+    localStorage.setItem(PROJECT_MEMORY_KEY, JSON.stringify(map))
+    localStorage.setItem(LAST_PROJECT_KEY, projectId)
+  } catch { /* no storage: nothing to remember with */ }
+}
+function lastProject() {
+  try { return localStorage.getItem(LAST_PROJECT_KEY) || '' } catch { return '' }
 }
 
 // Color per state string from monitor/status.py — the same states the desktop
@@ -142,6 +165,10 @@ export default function IntentionCard() {
   // is validated by the monitor and only double-checked by the gate.
   const [category, setCategory] = useState('')
   const [cats, setCats] = useState([])
+  // The project the session is part of ('' for none). A project with a home
+  // category makes that category the pick when none is chosen here.
+  const [project, setProject] = useState(lastProject)
+  const [projs, setProjs] = useState([])
   const [pending, setPending] = useState(null)   // a 409 from the gate: {picked, suggested, reason}
   const alive = useRef(true)
 
@@ -165,11 +192,21 @@ export default function IntentionCard() {
     fetchCategories()
       .then((c) => { if (alive.current) setCats(c.filter(pickableCategory)) })
       .catch(() => {})
+    fetchProjects()
+      .then((p) => {
+        if (!alive.current) return
+        setProjs(p)
+        // A remembered project that has since been archived or deleted is
+        // not offered; the picker falls back to "no project".
+        setProject((cur) => (cur && !p.some((x) => String(x.id) === String(cur)) ? '' : cur))
+      })
+      .catch(() => {})
   }, [])
 
   if (!isLocal || !ready || !snap) return null
 
   const colors = STATE[snap.state] || STATE.idle
+  const proj = projs.find((p) => String(p.id) === String(project)) || null
 
   const run = async (fn) => {
     if (busy) return
@@ -194,10 +231,13 @@ export default function IntentionCard() {
     setPending(null)
     const remembered = rememberedCategory(v)
     if (remembered) setCategory(remembered)
+    const rememberedProj = rememberedProject(v)
+    if (rememberedProj && projs.some((p) => String(p.id) === String(rememberedProj))) setProject(rememberedProj)
   }
   const launch = async (cat, confirm = false) => {
-    await startIntention(text, minutes, cat || undefined, confirm)
+    await startIntention(text, minutes, cat || undefined, confirm, project ? Number(project) : null)
     if (cat) rememberCategory(text, cat)
+    rememberProject(text, project)
     setText('')
     setPending(null)
   }
@@ -272,6 +312,11 @@ export default function IntentionCard() {
             <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">
               {snap.label}
             </div>
+            {snap.intention?.project?.name && (
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                part of <span className="font-medium text-slate-600 dark:text-slate-300">{snap.intention.project.name}</span>
+              </div>
+            )}
             {/* No live category here: reading it makes the dashboard the
                 foreground window, so it only ever reported the dashboard's
                 own classification. The timer widget shows the same field and
@@ -372,13 +417,26 @@ export default function IntentionCard() {
             Custom
           </button>
         </div>
+        {projs.length > 0 && (
+          <select
+            value={project}
+            onChange={(e) => { setProject(e.target.value); setPending(null) }}
+            aria-label="Project"
+            className="rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1.5 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+            <option value="">No project</option>
+            {projs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        )}
         <select
           value={category}
           onChange={(e) => { setCategory(e.target.value); setPending(null) }}
           aria-label="Session category"
           className="rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1.5 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
         >
-          <option value="">Category: let the gate decide</option>
+          <option value="">
+            {proj?.category ? `Category: ${proj.category} (from ${proj.name})` : 'Category: let the gate decide'}
+          </option>
           {cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
         </select>
         {duration === CUSTOM && (

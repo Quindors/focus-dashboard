@@ -151,10 +151,13 @@ export async function fetchIntention() {
 // unproductive one); omit it to let the intention gate decide. When the gate
 // disagrees with a pick the monitor answers 409 {needs_confirm, picked,
 // suggested, reason} once — resend with confirm=true to keep the pick anyway.
-export async function startIntention(text, durationMin, category, confirm = false) {
+// projectId files the session under a project; a project with a home
+// category makes that category the pick when none is given.
+export async function startIntention(text, durationMin, category, confirm = false, projectId = null) {
   const body = { text, duration_min: durationMin }
   if (category) body.category = category
   if (confirm) body.confirm = true
+  if (projectId) body.project_id = projectId
   const d = await apiPost('/api/intention', body)
   return d.active
 }
@@ -163,6 +166,43 @@ export async function startIntention(text, durationMin, category, confirm = fals
 // saw. A write, so local API only; null clears the category.
 export async function setSessionCategory(id, category) {
   return apiPost('/api/sessions/category', { id, category: category || null })
+}
+
+// File a finished session under a project (null takes it out of one).
+export async function setSessionProject(id, projectId) {
+  return apiPost('/api/sessions/project', { id, project_id: projectId || null })
+}
+
+// Projects: the long-lived thing a session is part of (monitor/projects.py).
+// [{ id, name, description, category, status, created_at, archived_at }, ...]
+// Reads fall back to the cloud mirror like sessions do; writes are local only.
+export async function fetchProjects(includeArchived = false) {
+  return localFirst(
+    () => apiGet(`/api/projects${includeArchived ? '?all=1' : ''}`),
+    async () => {
+      let q = supabase.from('projects').select('*').order('id', { ascending: false })
+      if (!includeArchived) q = q.eq('status', 'active')
+      const { data, error } = await q
+      if (error) throw new Error(error.message)
+      return data
+    },
+  )
+}
+
+// category: a real category that isn't marked unproductive, or '' / null for
+// "let the gate decide" — the monitor checks it the way it checks a pick.
+export async function addProject({ name, description, category }) {
+  return apiPost('/api/project', { name, description, category: category || null })
+}
+
+// Only the fields given change: { name?, description?, category?, archived? }.
+export async function updateProject(id, fields) {
+  return apiPost('/api/project/update', { id, ...fields })
+}
+
+// Its sessions stay, with no project.
+export async function deleteProject(id) {
+  return apiPost('/api/project/delete', { id })
 }
 
 // status: 'completed' | 'abandoned'. Completing a session rolls straight into

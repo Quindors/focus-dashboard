@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fetchCategories, fetchSessions, isMonitorLive, pickableCategory, setSessionCategory } from '../lib/dataSource'
+import { fetchCategories, fetchProjects, fetchSessions, isMonitorLive, pickableCategory, setSessionCategory, setSessionProject } from '../lib/dataSource'
 import ErrorNote from './ErrorNote'
 
 // The forest tab: every finished session (completed or expired — the same set
@@ -339,14 +339,14 @@ function fillTip(tip, s, kind, extra = 0) {
   if (declared) cat = seen && seen !== declared ? `${declared} · ${spent}` : declared
   else if (sessionCategory(s)) cat = `${seen} (observed, ${pct})`
   else cat = spent ? `Uncategorized · ${spent}` : 'Uncategorized'
-  m1.textContent = `${cat} · ${fmtDate(s.started_at)}`
+  m1.textContent = `${s.project_name ? `${s.project_name} · ` : ''}${cat} · ${fmtDate(s.started_at)}`
   const m2 = document.createElement('p'); m2.className = 'ff-tip-m'
   const alignTxt = s.avg_align == null ? 'ALIGN —' : `ALIGN ${Math.round(s.avg_align * 100)}%`
   m2.textContent = `${durationMin(s)} min · ${alignTxt}${extra ? ` · grove of ${extra + 1}` : ''}`
   tip.append(t, m1, m2)
   if (isMonitorLive()) {
     const m3 = document.createElement('p'); m3.className = 'ff-tip-m ff-tip-hint'
-    m3.textContent = 'Click to change the category'
+    m3.textContent = 'Click to change the category or project'
     tip.append(m3)
   }
 }
@@ -690,8 +690,10 @@ export default function ForestPanel() {
   }, [load])
 
   // Clicking a tree opens a relabel card: the honest fix for sessions the
-  // gate never saw, instead of guessing from what the monitor logged.
+  // gate never saw, instead of guessing from what the monitor logged — and
+  // the place to file an old session under a project.
   const [cats, setCats] = useState([])
+  const [projs, setProjs] = useState([])   // every project, archived too: old trees may belong to one
   const [editing, setEditing] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState(null)
@@ -699,17 +701,25 @@ export default function ForestPanel() {
     fetchCategories()
       .then((c) => setCats(c.filter(pickableCategory)))
       .catch(() => {})
+    fetchProjects(true)
+      .then(setProjs)
+      .catch(() => {})
   }, [])
   const onPick = useCallback((s) => {
     if (!isMonitorLive()) return
     setSaveErr(null)
-    setEditing({ id: s.id, text: s.text, category: sessionCategory(s) || '' })
+    setEditing({
+      id: s.id, text: s.text,
+      category: sessionCategory(s) || '', category0: sessionCategory(s) || '',
+      project: s.project_id != null ? String(s.project_id) : '', project0: s.project_id != null ? String(s.project_id) : '',
+    })
   }, [])
-  const saveCategory = async () => {
+  const saveEdit = async () => {
     setSaving(true)
     setSaveErr(null)
     try {
-      await setSessionCategory(editing.id, editing.category)
+      if (editing.category !== editing.category0) await setSessionCategory(editing.id, editing.category)
+      if (editing.project !== editing.project0) await setSessionProject(editing.id, editing.project ? Number(editing.project) : null)
       setEditing(null)
       await load()
     } catch (e) {
@@ -718,16 +728,33 @@ export default function ForestPanel() {
     setSaving(false)
   }
 
-  const { keys, byMonth, milestones, earnedByMonth, durCap, sizeLegend, speciesLegend } = useMemo(() => {
-    const rows = (sessions || []).filter((s) => s.started_at && s.ended_at)
-    rows.sort((a, b) => (a.started_at < b.started_at ? -1 : 1))
+  // Seeing the forest by project: null is the whole forest, 'none' the
+  // unfiled trees, otherwise a project id. Milestones and landmarks stay
+  // whole-forest — the land remembers everything, whatever is in view.
+  const [projectFilter, setProjectFilter] = useState(null)
+  const { keys, byMonth, milestones, earnedByMonth, durCap, sizeLegend, speciesLegend, projectChips, allCount } = useMemo(() => {
+    const allRows = (sessions || []).filter((s) => s.started_at && s.ended_at)
+    allRows.sort((a, b) => (a.started_at < b.started_at ? -1 : 1))
+    const milestones = computeMilestones(allRows)
+    const chipMap = new Map()
+    let unfiled = 0
+    for (const s of allRows) {
+      if (s.project_id == null) { unfiled++; continue }
+      const c = chipMap.get(s.project_id) || { id: s.project_id, name: s.project_name || `Project ${s.project_id}`, count: 0 }
+      c.count++
+      chipMap.set(s.project_id, c)
+    }
+    const projectChips = [...chipMap.values()].sort((a, b) => b.count - a.count)
+    if (projectChips.length && unfiled) projectChips.push({ id: 'none', name: 'No project', count: unfiled })
+    const rows = projectFilter === null
+      ? allRows
+      : allRows.filter((s) => (projectFilter === 'none' ? s.project_id == null : s.project_id === projectFilter))
     const byMonth = new Map()
     for (const s of rows) {
       const k = monthKey(s)
       if (!byMonth.has(k)) byMonth.set(k, [])
       byMonth.get(k).push(s)
     }
-    const milestones = computeMilestones(rows)
     // Landmark ids per grove, built HERE so each grove's array keeps a stable
     // identity across re-renders — a fresh array per render made the grove
     // effect refire (and the trees replay their grow-in) on every scroll tick.
@@ -753,8 +780,8 @@ export default function ForestPanel() {
     const speciesLegend = [...catCounts.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([label]) => ({ label, kind: speciesFor(label === 'Uncategorized' ? null : label).kind }))
-    return { keys: [...byMonth.keys()], byMonth, milestones, earnedByMonth, durCap, sizeLegend, speciesLegend }
-  }, [sessions])
+    return { keys: [...byMonth.keys()], byMonth, milestones, earnedByMonth, durCap, sizeLegend, speciesLegend, projectChips, allCount: allRows.length }
+  }, [sessions, projectFilter])
 
   // Open on the newest grove, and keep the month chips in sync with scrolling.
   useEffect(() => {
@@ -795,6 +822,19 @@ export default function ForestPanel() {
     return <p className="text-slate-500 dark:text-slate-400">Growing the forest…</p>
   }
   if (!keys.length) {
+    if (allCount) {
+      // A filter with nothing behind it (the project's trees were just
+      // refiled) — the forest itself is not empty, so say that instead.
+      return (
+        <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-8 rounded-lg shadow-md text-center">
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Nothing planted here yet</h2>
+          <p className="text-slate-500 dark:text-slate-400 mb-3">No finished session is filed under this project.</p>
+          <button onClick={() => setProjectFilter(null)} className="text-sm text-emerald-600 dark:text-emerald-400 underline underline-offset-4">
+            Show the whole forest
+          </button>
+        </div>
+      )
+    }
     return (
       <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-8 rounded-lg shadow-md text-center">
         <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">The field is waiting</h2>
@@ -806,6 +846,7 @@ export default function ForestPanel() {
   }
 
   const all = keys.flatMap((k) => byMonth.get(k))
+  const filterChip = projectFilter === null ? null : projectChips.find((c) => c.id === projectFilter)
   const totalHrs = all.reduce((a, s) => a + durationMin(s), 0) / 60
   const scored = all.filter((s) => s.avg_align != null)
   const avgAlign = scored.length
@@ -825,8 +866,29 @@ export default function ForestPanel() {
       <style>{FOREST_CSS}</style>
 
       <p className="mb-4 text-[15px] italic font-serif text-slate-500 dark:text-slate-400">
-        {all.length} sessions since {firstDate} — every one of them is still standing.
+        {filterChip
+          ? `${all.length} of ${allCount} sessions ${filterChip.id === 'none' ? 'stand on their own' : `belong to ${filterChip.name}`} — since ${firstDate}, every one still standing.`
+          : `${all.length} sessions since ${firstDate} — every one of them is still standing.`}
       </p>
+
+      {projectChips.length > 0 && (
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500 mr-1">Project</span>
+          {[{ id: null, name: 'Whole forest', count: allCount }, ...projectChips].map((c) => (
+            <button
+              key={String(c.id)}
+              onClick={() => setProjectFilter(c.id)}
+              className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                projectFilter === c.id
+                  ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
+            >
+              {c.name} <span className="opacity-60 tabular-nums">{c.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-4 grid-cols-2 md:grid-cols-4 mb-5">
         {stats.map((s) => (
@@ -857,7 +919,7 @@ export default function ForestPanel() {
       {editing && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 shadow-md px-4 py-3 text-sm">
           <span className="grow text-slate-700 dark:text-slate-200">
-            Recategorize <span className="font-semibold">“{editing.text}”</span>
+            Refile <span className="font-semibold">“{editing.text}”</span>
           </span>
           <select
             value={editing.category}
@@ -868,7 +930,26 @@ export default function ForestPanel() {
             <option value="">Uncategorized</option>
             {cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
           </select>
-          <button onClick={saveCategory} disabled={saving} className="rounded-md bg-emerald-500 px-3 py-1 font-medium text-white hover:bg-emerald-600 disabled:opacity-50">Save</button>
+          {projs.length > 0 && (
+            <select
+              value={editing.project}
+              onChange={(e) => setEditing({ ...editing, project: e.target.value })}
+              aria-label="Session project"
+              className="rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1 text-sm text-slate-700 dark:text-slate-200"
+            >
+              <option value="">No project</option>
+              {projs.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}{p.status === 'archived' ? ' (archived)' : ''}</option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={saveEdit}
+            disabled={saving || (editing.category === editing.category0 && editing.project === editing.project0)}
+            className="rounded-md bg-emerald-500 px-3 py-1 font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+          >
+            Save
+          </button>
           <button onClick={() => setEditing(null)} disabled={saving} className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">Cancel</button>
           {saveErr && <span className="w-full text-red-600 dark:text-red-400">{saveErr}</span>}
         </div>
