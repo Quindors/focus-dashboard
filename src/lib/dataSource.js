@@ -54,6 +54,9 @@ function setLive(v) {
   liveListeners.forEach((fn) => fn(v))
 }
 export const isMonitorLive = () => monitorLive
+// For a probe that ran somewhere other than this thread (useMonitorLive's
+// worker): report what it found.
+export const markMonitor = (ok) => setLive(!!ok)
 export function onMonitorLive(fn) {
   liveListeners.add(fn)
   fn(monitorLive)
