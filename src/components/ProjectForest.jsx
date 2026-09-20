@@ -6,7 +6,7 @@ import {
 } from '../lib/projectLife'
 import {
   ambientSpans, defsFor, drawBackdrop, drawLandmark, drawTree, durationMin, el, fmtDate,
-  foliageFill, jitter, parseTs, pts, sessionCategory, speciesFor,
+  foliageFill, hillY, jitter, parseTs, pts, sessionCategory, speciesFor,
 } from '../lib/forestDraw'
 
 // The project forest: one ecosystem per project, centred on a single tree
@@ -203,7 +203,8 @@ function spiralSpot(i, seedOff, spread = 1) {
   const r = (78 + 30 * Math.sqrt(i + 1)) * spread
   const x = 500 + Math.cos(a) * r * 1.75 + (jitter(seedOff + i * 3) - 0.5) * 24
   const y = 476 + Math.sin(a) * r * 0.42 + (jitter(seedOff + i * 3 + 1) - 0.5) * 10
-  return { x: Math.min(950, Math.max(50, x)), y: Math.min(508, Math.max(398, y)) }
+  // Clamped above the foreground grass band, which starts at y=490.
+  return { x: Math.min(950, Math.max(50, x)), y: Math.min(482, Math.max(398, y)) }
 }
 
 function renderEcosystem(svg, tip, life, uid, seedOff, onPick) {
@@ -281,19 +282,43 @@ function renderWilds(svg, tip, rows, uid, seedOff, onPick) {
   drawBackdrop(svg, uid, seedOff)
   const fgBand = el('ellipse', { cx: 500, cy: 600, rx: 860, ry: 110, fill: 'var(--ff-fg-band)', opacity: '.85', filter: `url(#rough${uid})` }, svg)
   const layer = []
+  // A whole hillside, not a clearing: the wild trees take the same scattered
+  // stand the month groves use, oldest toward the back ridge and newest
+  // toward the front, each standing on the terrain curve. Depth sets size,
+  // so the back slope reads as distance.
+  const yTop = (x) => hillY(x, 500, 385, 480, 105) + 8
+  const yBot = (x) => Math.min(482, hillY(x, 500, 655, 840, 205) + 20)
+  const N = rows.length
+  const placed = []
   rows.forEach((s, i) => {
-    const { x, y } = spiralSpot(i, seedOff, 1.15)
-    const sp = speciesFor(sessionCategory(s))
     const mins = durationMin(s)
-    const sc = 0.45 + Math.min(1, mins / 120) * 0.3
+    const tmin = Math.max(0, 0.5 - N * 0.05)
+    const target = N > 1 ? tmin + (1 - tmin) * (i / (N - 1)) : 0.85
+    let best = null
+    for (let k = 0; k < 40; k++) {
+      const cx = 50 + jitter(seedOff * 7 + i * 53 + k * 11 + 1) * 900
+      const t = Math.max(0, Math.min(1, target + (jitter(seedOff * 7 + i * 53 + k * 11 + 2) - 0.5) * 0.7))
+      const top = yTop(cx), bot = yBot(cx)
+      const cy = top + (bot - top) * t
+      const size = (0.55 + 0.45 * t) * (0.55 + Math.min(1, mins / 120) * 0.35)
+      const r = 24 * size
+      let gap = Infinity
+      for (const q of placed) gap = Math.min(gap, Math.hypot(q.x - cx, (q.y - cy) * 1.6) - (q.r + r))
+      if (best === null || gap > best.gap) best = { x: cx, y: cy, size, r, gap }
+      if (gap >= 4) break
+    }
+    placed.push({ x: best.x, y: best.y, r: best.r })
+    const { x, y, size } = best
+    const sp = speciesFor(sessionCategory(s))
+    const sc = size
     const g = el('g', {
       class: 'ff-tree', transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, tabindex: '0',
-      'aria-label': `${s.text}, ${sp.label}, ${mins} minutes, no project`,
+      'aria-label': `${s.text}, ${sp.label}, ${mins} minutes`,
     })
     g.appendChild(drawTree(sp.kind, foliageFill(sp.kind, s.avg_align), sc, uid, i + seedOff))
     attachTip(g, svg, tip, () => {
       const alignTxt = s.avg_align == null ? 'ALIGN —' : `ALIGN ${Math.round(s.avg_align * 100)}%`
-      return [s.text, `${sp.label} · ${fmtDate(s.started_at)}`, `${mins} min · ${alignTxt} · no project`]
+      return [s.text, `${sp.label} · ${fmtDate(s.started_at)}`, `${mins} min · ${alignTxt}`]
     }, isMonitorLive() ? 'Click to file it under a project' : null, onPick ? () => onPick(s) : null)
     layer.push({ y, node: g })
   })
@@ -393,7 +418,7 @@ function Wilds({ rows, onPick }) {
       <div className="px-5 py-4">
         <div className="flex justify-between items-baseline gap-3 flex-wrap">
           <span className="text-lg font-semibold text-slate-800 dark:text-slate-100">The wilds</span>
-          <span className="text-sm text-slate-500 dark:text-slate-400 tabular-nums">{rows.length} sessions · {hrs.toFixed(1)} h · no project</span>
+          <span className="text-sm text-slate-500 dark:text-slate-400 tabular-nums">{rows.length} sessions · {hrs.toFixed(1)} h</span>
         </div>
         <p className="mt-1 text-[15px] italic font-serif text-slate-500 dark:text-slate-400">
           Sessions that belong to no project grow wild. Click one to file it under a project — it waters that tree.
