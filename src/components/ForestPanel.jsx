@@ -369,6 +369,12 @@ export default function ForestPanel() {
   const [cats, setCats] = useState([])
   const [projs, setProjs] = useState([])   // every project, archived too: old trees may belong to one
   const [editing, setEditing] = useState(null)
+  // The card sits under the forest window, so bring it into view when a
+  // tree opens it — the tree may be a whole scene above it.
+  const editRef = useRef(null)
+  useEffect(() => {
+    if (editing) editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [editing])
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState(null)
   useEffect(() => {
@@ -499,7 +505,7 @@ export default function ForestPanel() {
     return <p className="text-slate-500 dark:text-slate-400">Growing the forest…</p>
   }
   const editCard = editing && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 shadow-md px-4 py-3 text-sm">
+        <div ref={editRef} className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 shadow-md px-4 py-3 text-sm">
           <span className="grow text-slate-700 dark:text-slate-200">
             Refile <span className="font-semibold">“{editing.text}”</span>
           </span>
@@ -563,13 +569,12 @@ export default function ForestPanel() {
     <div className="ff-root">
       <style>{FOREST_CSS}</style>
       {toggle}
-      {editCard}
       {inner}
     </div>
   )
 
   if (view === 'projects') {
-    return shell(<ProjectForest projects={projs} sessions={sessions} onPick={onPick} />)
+    return shell(<ProjectForest projects={projs} sessions={sessions} onPick={onPick} underForest={editCard} />)
   }
 
   if (!keys.length) {
@@ -681,6 +686,7 @@ export default function ForestPanel() {
           />
         ))}
       </div>
+      {editCard}
 
       <div className="mt-6">
         <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-3">

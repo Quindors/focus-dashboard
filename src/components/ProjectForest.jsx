@@ -430,7 +430,8 @@ function Wilds({ rows, onPick }) {
 
 const ORDER = { thriving: 0, fading: 1, wilting: 2, seedling: 3, dead: 4, dormant: 5 }
 
-export default function ProjectForest({ projects, sessions, onPick }) {
+// underForest: the panel's refile card, rendered right under the scroller.
+export default function ProjectForest({ projects, sessions, onPick, underForest = null }) {
   // One clock per mount: health is a function of "now", and a page left open
   // overnight should not re-rank its ecosystems under the reader's cursor.
   const [now] = useState(() => Date.now())
@@ -541,6 +542,7 @@ export default function ProjectForest({ projects, sessions, onPick }) {
         {lives.map((l, i) => <Ecosystem key={l.project.id} life={l} idx={i} onPick={onPick} />)}
         {wilds.length > 0 && <Wilds rows={wilds} onPick={onPick} />}
       </div>
+      {underForest}
 
       <div className="grid gap-4 grid-cols-1 md:grid-cols-3 mt-6 items-stretch">
         <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-lg shadow-md p-5">
