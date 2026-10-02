@@ -72,6 +72,7 @@ const STATE = {
   break:    { ring: 'text-sky-500',     chip: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',             label: 'On a break' },
   paused:   { ring: 'text-sky-500',     chip: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',             label: 'Paused' },
   idle:     { ring: 'text-slate-400',   chip: 'bg-slate-500/15 text-slate-500 dark:text-slate-400',       label: 'No session' },
+  tracking: { ring: 'text-slate-500',   chip: 'bg-slate-500/15 text-slate-500 dark:text-slate-400',       label: 'Tracker mode' },
 }
 
 // Parse the monitor's naive local "YYYY-MM-DD HH:MM:SS" stamps explicitly —

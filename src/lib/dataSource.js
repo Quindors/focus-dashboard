@@ -251,6 +251,18 @@ export async function fetchStatus() {
   return apiGet('/api/status')
 }
 
+// Alert mode: 'focus' (alerts on) or 'tracker' (logs the same, alerts only
+// inside a session filed under a project). Lives on the monitor's machine,
+// so local API only.
+export async function fetchMode() {
+  const d = await apiGet('/api/mode')
+  return d.mode
+}
+export async function saveMode(mode) {
+  const d = await apiPost('/api/mode', { mode })
+  return d.mode
+}
+
 // Breaks: a fixed stretch with the monitor fully off — nothing classified,
 // nothing logged, no alerts, no intention needed. Live on the monitor's
 // machine like intentions, so: local API only.

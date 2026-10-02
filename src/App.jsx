@@ -13,6 +13,7 @@ import EmailReportCard from './components/EmailReportCard'
 import ForestPanel from './components/ForestPanel'
 import ProjectsPanel from './components/ProjectsPanel'
 import MonitorBanner from './components/MonitorBanner'
+import ModeToggle from './components/ModeToggle'
 
 function TabBar({ tab, setTab }) {
   const tabs = [
@@ -91,6 +92,7 @@ function App() {
         <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
           <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-100">Focus Dashboard</h1>
           <div className="flex items-center gap-4">
+            <ModeToggle />
             <TabBar tab={tab} setTab={setTab} />
             <LastUpdated at={lastUpdated} />
             <ThemeToggle />
