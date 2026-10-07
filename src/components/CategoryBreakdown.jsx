@@ -40,7 +40,10 @@ function OutsideTooltip({ hover }) {
 export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
   const { isDark } = useTheme()
   const [hover, setHover] = useState(null)
-  // Stroke each slice with the card background so the gap reads as a clean divider.
+  // Stroke each slice with the card background so the gap reads as a clean
+  // divider. That stroke is 2px, so a slice thinner than that (a 2-event
+  // category in an 800-event day is under a degree) vanished under its own
+  // outline: minAngle on the Pie keeps every non-empty slice a visible sliver.
   const sliceStroke = isDark ? '#0f172a' : '#ffffff'  // slate-900 / white
   const cardClass = "bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md transition-colors"
 
@@ -93,6 +96,7 @@ export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
               innerRadius={82}
               outerRadius={124}
               paddingAngle={2}
+              minAngle={5}
               labelLine={false}
               onMouseEnter={(sector) => showHover(sector)}
               onMouseLeave={() => setHover(null)}

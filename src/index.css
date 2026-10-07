@@ -7,6 +7,18 @@
 html { color-scheme: light; }
 html.dark { color-scheme: dark; }
 
+/* A native <select> paints its popup list from the <option>s' own colors, not
+   the page's. The session card's transparent selects left Chrome drawing the
+   theme's slate-200 text on its default white list in a dark browser. */
+select option {
+  color: #334155;            /* slate-700 */
+  background-color: #ffffff;
+}
+html.dark select option {
+  color: #e2e8f0;            /* slate-200 */
+  background-color: #1e293b; /* slate-800 */
+}
+
 /* Applied transiently by ThemeProvider around a theme flip (see theme.jsx). */
 html.theme-fade,
 html.theme-fade *,
