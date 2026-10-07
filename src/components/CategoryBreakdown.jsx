@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useCallback, useState } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { useTheme } from '../theme'
 import { fmtHM, fmtClock } from '../lib/format'
@@ -37,19 +37,52 @@ function OutsideTooltip({ hover }) {
   )
 }
 
-export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
-  const { isDark } = useTheme()
-  const [hover, setHover] = useState(null)
+// The donut is its own memoized component because Recharts keys the Pie's
+// enter animation on the Pie's props object: any re-render of the card
+// rebuilt it and restarted the expansion, 400ms start delay included. Every
+// hover sets card state, so hovering a slice while the ring was still
+// growing kept it growing forever. With stable props, hover state never
+// reaches the Pie and the opening animation runs once, to the end.
+const Donut = memo(function Donut({ byCategory, isDark, onHover, onLeave }) {
   // Stroke each slice with the card background so the gap reads as a clean
   // divider. That stroke is 2px, so a slice thinner than that (a 2-event
   // category in an 800-event day is under a degree) vanished under its own
   // outline: minAngle on the Pie keeps every non-empty slice a visible sliver.
   const sliceStroke = isDark ? '#0f172a' : '#ffffff'  // slate-900 / white
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <PieChart>
+        <Pie
+          data={byCategory}
+          dataKey="count"
+          nameKey="name"
+          cx="50%"
+          cy="50%"
+          innerRadius={82}
+          outerRadius={124}
+          paddingAngle={2}
+          minAngle={4.5}
+          labelLine={false}
+          onMouseEnter={onHover}
+          onMouseLeave={onLeave}
+        >
+          {byCategory.map((entry, i) => (
+            <Cell key={i} fill={colorFor(entry.isProductive, isDark)} stroke={sliceStroke} strokeWidth={2} />
+          ))}
+        </Pie>
+      </PieChart>
+    </ResponsiveContainer>
+  )
+})
+
+export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
+  const { isDark } = useTheme()
+  const [hover, setHover] = useState(null)
   const cardClass = "bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md transition-colors"
 
   // Recharts hands the hovered sector's geometry to onMouseEnter — project a
   // point just past the outer edge at the slice's mid-angle.
-  function showHover(sector) {
+  const showHover = useCallback((sector) => {
     const { cx, cy, midAngle, outerRadius, name, count, minutes, inSession } = sector || {}
     if (cx == null || midAngle == null) return
     const r = (outerRadius || 124) + 12
@@ -63,7 +96,8 @@ export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
       y: cy + r * Math.sin(-midAngle * RADIAN),
       onLeft: cos < 0,
     })
-  }
+  }, [])
+  const hideHover = useCallback(() => setHover(null), [])
 
   if (!byCategory || byCategory.length === 0) {
     return (
@@ -85,28 +119,7 @@ export default function CategoryBreakdown({ byCategory, totalMinutes = 0 }) {
       {/* Donut with an HTML overlay centered in the hole (reliable across
           Recharts versions, unlike an SVG <Label>). */}
       <div className="relative">
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={byCategory}
-              dataKey="count"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              innerRadius={82}
-              outerRadius={124}
-              paddingAngle={2}
-              minAngle={5}
-              labelLine={false}
-              onMouseEnter={(sector) => showHover(sector)}
-              onMouseLeave={() => setHover(null)}
-            >
-              {byCategory.map((entry, i) => (
-                <Cell key={i} fill={colorFor(entry.isProductive, isDark)} stroke={sliceStroke} strokeWidth={2} />
-              ))}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
+        <Donut byCategory={byCategory} isDark={isDark} onHover={showHover} onLeave={hideHover} />
 
         <OutsideTooltip hover={hover} />
 

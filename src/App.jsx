@@ -105,17 +105,17 @@ function App() {
           <>
             <IntentionCard />
             <BeeminderCard />
-            <EmailReportCard />
             {loading && <p className="text-slate-500 dark:text-slate-400">Loading…</p>}
             {error && <p className="text-red-600 dark:text-red-400">Error: {error}</p>}
             {data && (
-              <div className="grid gap-6 md:grid-cols-2">
+              <div className="grid gap-6 md:grid-cols-2 mb-6">
                 <TodayCard today={data.today} />
                 <WeeklyChart weekly={data.weekly} />
-                <div className="md:col-span-2">
-                  <CategoryBreakdown byCategory={data.byCategory} totalMinutes={data.today.totalMinutes} />
-                </div>
               </div>
+            )}
+            <EmailReportCard />
+            {data && (
+              <CategoryBreakdown byCategory={data.byCategory} totalMinutes={data.today.totalMinutes} />
             )}
           </>
         )}
