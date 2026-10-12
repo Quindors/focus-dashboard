@@ -15,11 +15,13 @@ import ErrorNote from './ErrorNote'
 
 // Mirrors the monitor's own validation (monitor/intentions.py). A focus
 // session is a real block of work, so half an hour is the floor.
-const MIN_MINUTES = 30
+const MIN_MINUTES = 20
 const MAX_MINUTES = 480
-const DURATIONS = [30, 45, 60, 90, 120]
+const DURATIONS = [20, 30, 45, 60, 90, 120]
 const DEFAULT_DURATION = 45
 const CUSTOM = 'custom'
+// Untimed: a stopwatch instead of a countdown (monitor/intentions.py UNTIMED_*).
+const STOPWATCH = 'stopwatch'
 const BREAK_MINUTES = 15
 
 // The category picked for an intention is remembered by its text, so typing
@@ -139,6 +141,44 @@ function Dial({ snap, colors, verb = 'ends' }) {
   )
 }
 
+// An untimed session's clock counts UP from stopwatch_from, ticking locally.
+// The ring fills toward the point "Done" becomes available, then stays full.
+function Stopwatch({ snap, colors }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const from = parseStamp(snap.stopwatch_from)
+  // eslint-disable-next-line react-hooks/purity -- a clock reads the clock
+  const worked = from ? Math.max(0, (Date.now() - from) / 1000) : snap.elapsed_sec || 0
+  const need = (snap.elapsed_sec || 0) + (snap.finish_in_sec || 0)
+  const used = need > 0 ? Math.min(1, worked / need) : 1
+  const wait = Math.max(0, need - worked)
+  const r = 34
+  const circ = 2 * Math.PI * r
+  return (
+    <div className="flex items-center gap-4">
+      <svg width="84" height="84" viewBox="0 0 84 84" className="-rotate-90 flex-none">
+        <circle cx="42" cy="42" r={r} fill="none" strokeWidth="6"
+                className="stroke-slate-200 dark:stroke-slate-800" />
+        <circle cx="42" cy="42" r={r} fill="none" strokeWidth="6" strokeLinecap="round"
+                className={`${colors.ring} transition-[stroke-dashoffset] duration-1000 ease-linear`}
+                stroke="currentColor" strokeDasharray={circ}
+                strokeDashoffset={circ * (1 - used)} />
+      </svg>
+      <div>
+        <div className="text-3xl font-bold leading-none tabular-nums text-slate-800 dark:text-slate-100">
+          {formatLeft(worked)}
+        </div>
+        <div className="text-xs text-slate-400 dark:text-slate-500 mt-1.5">
+          {wait > 0 ? `worked · Done in ${formatLeft(wait)}` : 'worked · stopwatch'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Chip({ colors }) {
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${colors.chip}`}>
@@ -222,9 +262,10 @@ export default function IntentionCard() {
     setBusy(false)
   }
 
+  const untimed = duration === STOPWATCH
   const minutes = duration === CUSTOM ? Number(custom) : duration
-  const minutesValid =
-    Number.isInteger(minutes) && minutes >= MIN_MINUTES && minutes <= MAX_MINUTES
+  const minutesValid = untimed ||
+    (Number.isInteger(minutes) && minutes >= MIN_MINUTES && minutes <= MAX_MINUTES)
   const canStart = !busy && text.trim() !== '' && minutesValid
 
   const onTextChange = (v) => {
@@ -236,7 +277,8 @@ export default function IntentionCard() {
     if (rememberedProj && projs.some((p) => String(p.id) === String(rememberedProj))) setProject(rememberedProj)
   }
   const launch = async (cat, confirm = false) => {
-    await startIntention(text, minutes, cat || undefined, confirm, project ? Number(project) : null)
+    await startIntention(text, untimed ? null : minutes, cat || undefined, confirm,
+      project ? Number(project) : null, untimed)
     if (cat) rememberCategory(text, cat)
     rememberProject(text, project)
     setText('')
@@ -256,7 +298,7 @@ export default function IntentionCard() {
   const finish = (status) => run(() => endIntention(status))
   const takeBreak = () => run(() => startBreak(BREAK_MINUTES))
   const stopBreak = () => run(() => endBreak())
-  const pause = () => run(() => pauseIntention())
+  const pause = () => run(() => pauseIntention(snap.untimed ? snap.pause_max_min : undefined))
   // A pause is a break under the hood, so resuming early is ending the
   // break — the monitor hands the unused part of the minute back.
   const resume = () => run(() => endBreak())
@@ -300,6 +342,9 @@ export default function IntentionCard() {
     const sessionEnd = paused && snap.intention ? parseStamp(snap.intention.ends_at) : null
     const pauseEnd = paused && snap.break ? parseStamp(snap.break.ends_at) : null
     const frozenLeft = sessionEnd && pauseEnd ? Math.max(0, (sessionEnd - pauseEnd) / 1000) : null
+    // Untimed: "Done" waits for 20 minutes of work; breaks run up to 5 min.
+    const finishWait = snap.untimed ? snap.finish_in_sec || 0 : 0
+    const breakMin = snap.untimed ? snap.pause_max_min || 5 : 1
     return (
       <div className={card}>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -324,11 +369,15 @@ export default function IntentionCard() {
                 floats over real work, where it means something. */}
             <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
               {paused
-                ? `timer frozen${frozenLeft != null ? ` — resumes with ${formatLeft(frozenLeft)} left` : ''}`
-                : `started ${timeLabel(parseStamp(snap.started_at))}`}
+                ? snap.untimed
+                  ? `stopwatch stopped at ${formatLeft(snap.elapsed_sec || 0)}`
+                  : `timer frozen${frozenLeft != null ? ` — resumes with ${formatLeft(frozenLeft)} left` : ''}`
+                : `started ${timeLabel(parseStamp(snap.started_at))}${snap.untimed ? ' · untimed' : ''}`}
             </div>
           </div>
-          <Dial snap={snap} colors={colors} verb={paused ? 'resumes' : 'ends'} />
+          {snap.untimed && !paused
+            ? <Stopwatch snap={snap} colors={colors} />
+            : <Dial snap={snap} colors={colors} verb={paused ? 'resumes' : 'ends'} />}
           <div className="flex gap-2">
             {paused ? (
               <button
@@ -343,8 +392,10 @@ export default function IntentionCard() {
               <>
                 <button
                   onClick={() => finish('completed')}
-                  disabled={busy}
-                  title={`Ends the session and starts a ${BREAK_MINUTES}-minute break`}
+                  disabled={busy || finishWait > 0}
+                  title={finishWait > 0
+                    ? 'An untimed session can be finished after 20 minutes of work — breaks don\'t count'
+                    : 'Ends the session and starts your break (half the session if it ran under 30 minutes)'}
                   className="px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
                 >
                   Done
@@ -352,10 +403,12 @@ export default function IntentionCard() {
                 <button
                   onClick={pause}
                   disabled={busy}
-                  title="Freeze the timer and monitoring for 1 minute — no session time is lost"
+                  title={snap.untimed
+                    ? `Stop the stopwatch and monitoring for up to ${breakMin} minutes — take as many as you need`
+                    : 'Freeze the timer and monitoring for 1 minute — no session time is lost'}
                   className="px-3 py-1.5 rounded-md text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
                 >
-                  Pause 1m
+                  {snap.untimed ? `Break ${breakMin}m` : 'Pause 1m'}
                 </button>
               </>
             )}
@@ -416,6 +469,17 @@ export default function IntentionCard() {
             }`}
           >
             Custom
+          </button>
+          <button
+            onClick={() => setDuration(STOPWATCH)}
+            title="Untimed: a stopwatch instead of a countdown. Finish after 20 minutes of work; breaks of up to 5 minutes along the way"
+            className={`px-2.5 py-1 rounded-md text-sm font-medium transition-colors ${
+              duration === STOPWATCH
+                ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+            }`}
+          >
+            Stopwatch
           </button>
         </div>
         {projs.length > 0 && (

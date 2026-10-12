@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchRecentEvents, fetchCategories, saveCorrections } from '../lib/dataSource'
+import { fetchRecentEvents, fetchCategories, isMonitorLive, saveCorrections, saveIntentReview } from '../lib/dataSource'
 import ErrorNote from './ErrorNote'
 
 const POLL_MS = 15000
@@ -30,6 +30,7 @@ function groupEvents(events) {
   let cur = null
   for (const e of events) {
     const key = `${normTitle(e.current_window)}|${e.category_name || ''}|${e.human_label || ''}`
+      + `|${e.intention_id ?? ''}|${e.human_align ?? ''}`
     const t = new Date(e.timestamp).getTime()
     const fits =
       cur &&
@@ -37,6 +38,7 @@ function groupEvents(events) {
       (isNaN(t) || isNaN(cur.earliestMs) || cur.earliestMs - t <= GROUP_GAP_MS)
     if (fits) {
       cur.ids.push(e.id)
+      if (e.align_score != null) { cur.alignSum += e.align_score; cur.alignN += 1 }
       cur.earliest = e.timestamp
       cur.earliestMs = t
       cur.count += 1
@@ -50,6 +52,11 @@ function groupEvents(events) {
         category_name: e.category_name,
         confidence: e.confidence,
         human_label: e.human_label,
+        intention_id: e.intention_id ?? null,
+        intention_text: e.intention_text || null,
+        human_align: e.human_align ?? null,
+        alignSum: e.align_score ?? 0,
+        alignN: e.align_score != null ? 1 : 0,
         latest: e.timestamp,
         earliest: e.timestamp,
         earliestMs: t,
@@ -59,6 +66,78 @@ function groupEvents(events) {
     }
   }
   return groups
+}
+
+// The monitor's own lines (monitor/config.py IntentionSettings): at or above
+// 0.7 is on intention, below 0.5 is off, between is drifting.
+const ON_MIN = 0.7
+const OFF_MAX = 0.5
+
+// How a session row reads right now: the user's ruling when there is one,
+// else the model's mean ALIGN over the group.
+function intentOf(group) {
+  if (group.intention_id == null) return null
+  if (group.human_align === 1) return { state: 'on', ruled: true }
+  if (group.human_align === 0) return { state: 'off', ruled: true }
+  if (!group.alignN) return { state: 'unscored', ruled: false }
+  const a = group.alignSum / group.alignN
+  return { state: a >= ON_MIN ? 'on' : a >= OFF_MAX ? 'drift' : 'off', ruled: false, align: a }
+}
+
+const INTENT_TONE = {
+  on: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  drift: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  off: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  unscored: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+}
+const INTENT_LABEL = { on: 'On intention', drift: 'Drifting', off: 'Off intention', unscored: 'Not scored' }
+
+// Under a session row: what the monitor decided about it against the session,
+// and one click to set it right. A ruling fixes these rows everywhere
+// alignment counts and teaches the monitor this window for this intention.
+function IntentLine({ group, onRule, busy }) {
+  const intent = intentOf(group)
+  if (!intent) return null
+  const live = isMonitorLive()
+  const btn = 'text-xs px-2 py-0.5 rounded-md border transition-colors disabled:opacity-50'
+  return (
+    <div className="mt-1 flex items-center gap-2 flex-wrap text-xs">
+      <span className={`inline-block px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${INTENT_TONE[intent.state]}`}
+            title={intent.ruled ? 'Your ruling' : intent.align != null ? `Model ALIGN ${Math.round(intent.align * 100)}%` : undefined}>
+        {INTENT_LABEL[intent.state]}
+        {intent.ruled ? ' · you' : intent.align != null ? ` · ${Math.round(intent.align * 100)}%` : ''}
+      </span>
+      {group.intention_text && (
+        <span className="text-slate-400 dark:text-slate-500 truncate max-w-[22rem]" title={group.intention_text}>
+          for “{group.intention_text}”
+        </span>
+      )}
+      {live && (intent.ruled ? (
+        <button onClick={() => onRule(group, null)} disabled={busy}
+                title="Go back to the monitor's own verdict"
+                className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 disabled:opacity-50">
+          undo
+        </button>
+      ) : (
+        <>
+          {intent.state !== 'on' && (
+            <button onClick={() => onRule(group, true)} disabled={busy}
+                    title="This was the session's work — counts it as on intention and teaches the monitor this window"
+                    className={`${btn} border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/30`}>
+              Mark on intention
+            </button>
+          )}
+          {intent.state !== 'off' && (
+            <button onClick={() => onRule(group, false)} disabled={busy}
+                    title="This wasn't the session's work — counts it as off intention and teaches the monitor this window"
+                    className={`${btn} border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/30`}>
+              Mark off intention
+            </button>
+          )}
+        </>
+      ))}
+    </div>
+  )
 }
 
 function CategoryChip({ name, isProductive }) {
@@ -76,7 +155,7 @@ function CategoryChip({ name, isProductive }) {
 }
 
 // One grouped row: what the AI said, and a dropdown to fix every event in it.
-function GroupRow({ group, categories, productiveMap, onCorrect, busy }) {
+function GroupRow({ group, categories, productiveMap, onCorrect, onRule, busy }) {
   const corrected = !!group.human_label && group.human_label !== group.category_name
   const effective = group.human_label || group.category_name || ''
   const single = group.count === 1
@@ -108,6 +187,7 @@ function GroupRow({ group, categories, productiveMap, onCorrect, busy }) {
             {group.reason}
           </div>
         )}
+        <IntentLine group={group} onRule={onRule} busy={busy} />
       </td>
       <td className="py-2 pr-3 align-top whitespace-nowrap">
         <CategoryChip name={group.category_name || '—'} isProductive={productiveMap[group.category_name]} />
@@ -159,6 +239,7 @@ export default function ReviewPanel() {
   const [savingKeys, setSavingKeys] = useState(new Set())
   const [refreshing, setRefreshing] = useState(false)
   const [onlyLowConfidence, setOnlyLowConfidence] = useState(false)
+  const [onlyDrift, setOnlyDrift] = useState(false)
   const savingRef = useRef(savingKeys)
   savingRef.current = savingKeys
 
@@ -217,10 +298,36 @@ export default function ReviewPanel() {
     }
   }
 
+  async function handleRule(group, aligned) {
+    setSavingKeys((s) => new Set(s).add(group.key))
+    try {
+      await saveIntentReview(group.ids, aligned)
+      const value = aligned === null ? null : aligned ? 1 : 0
+      const idSet = new Set(group.ids)
+      setEvents((rows) => rows.map((r) => (idSet.has(r.id) ? { ...r, human_align: value } : r)))
+      setError(null)
+    } catch (e) {
+      setError(e)
+    } finally {
+      setSavingKeys((s) => {
+        const next = new Set(s)
+        next.delete(group.key)
+        return next
+      })
+    }
+  }
+
   const groups = groupEvents(events || [])
+  // "Drifting or off" keeps the rows to look at: model verdicts below the
+  // on-intention line, plus anything already ruled (so a ruling stays in view).
   const shown = groups.filter(
-    (g) => !onlyLowConfidence || g.human_label || g.confidence == null || g.confidence < 0.8
+    (g) => (!onlyLowConfidence || g.human_label || g.confidence == null || g.confidence < 0.8)
+      && (!onlyDrift || (intentOf(g) && (intentOf(g).ruled || ['drift', 'off'].includes(intentOf(g).state))))
   )
+  const driftCount = groups.filter((g) => {
+    const i = intentOf(g)
+    return i && !i.ruled && ['drift', 'off'].includes(i.state)
+  }).length
   const correctedCount = groups.filter(
     (g) => g.human_label && g.human_label !== g.category_name
   ).length
@@ -232,6 +339,15 @@ export default function ReviewPanel() {
           Review recent activity
         </h2>
         <div className="flex items-center gap-4">
+          <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={onlyDrift}
+              onChange={(e) => setOnlyDrift(e.target.checked)}
+              className="accent-emerald-500"
+            />
+            drifting or off intention only{driftCount > 0 ? ` (${driftCount})` : ''}
+          </label>
           <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -252,7 +368,10 @@ export default function ReviewPanel() {
       </div>
       <p className="text-xs text-slate-400 dark:text-slate-500 mb-4">
         Similar back-to-back events are grouped into one row — correcting it fixes every
-        event in the group. Corrections teach the monitor going forward.
+        event in the group. Corrections teach the monitor going forward. Rows from a focus
+        session also say whether they were on your intention; marking one fixes those rows
+        everywhere it counts — the forest, the weekly report, Beeminder — and teaches the
+        monitor that window for that session.
         {correctedCount > 0 && ` ${correctedCount} corrected.`}
       </p>
 
@@ -281,6 +400,7 @@ export default function ReviewPanel() {
                   categories={categories}
                   productiveMap={productiveMap}
                   onCorrect={handleCorrect}
+                  onRule={handleRule}
                   busy={savingKeys.has(g.key)}
                 />
               ))}

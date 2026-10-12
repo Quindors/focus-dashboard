@@ -156,8 +156,10 @@ export async function fetchIntention() {
 // suggested, reason} once — resend with confirm=true to keep the pick anyway.
 // projectId files the session under a project; a project with a home
 // category makes that category the pick when none is given.
-export async function startIntention(text, durationMin, category, confirm = false, projectId = null) {
-  const body = { text, duration_min: durationMin }
+// durationMin null with untimed = a stopwatch session: no countdown, finishable
+// after 20 minutes of work, breaks of up to 5 minutes along the way.
+export async function startIntention(text, durationMin, category, confirm = false, projectId = null, untimed = false) {
+  const body = untimed ? { text, untimed: true } : { text, duration_min: durationMin }
   if (category) body.category = category
   if (confirm) body.confirm = true
   if (projectId) body.project_id = projectId
@@ -219,8 +221,9 @@ export async function endIntention(status) {
 // moves out by the same minute) and the monitor stops watching, exactly like
 // a short break. It resumes on its own; resuming early is endBreak() — a
 // pause is a break under the hood — and hands the unused time back.
-export async function pauseIntention() {
-  return apiPost('/api/intention/pause', {})
+// minutes: only for an untimed session (1-5); a timed one always pauses 1.
+export async function pauseIntention(minutes) {
+  return apiPost('/api/intention/pause', minutes ? { minutes } : {})
 }
 
 // Finished focus sessions (completed or expired — the same set Beeminder
@@ -249,6 +252,15 @@ export async function fetchSessions(limit = 1000) {
 // what floats on your screen can't disagree.
 export async function fetchStatus() {
   return apiGet('/api/status')
+}
+
+// Rule logged session rows on (true) or off (false) intention, or clear the
+// ruling (null). Fixes those rows everywhere alignment is read — the forest's
+// watering, the weekly report, Beeminder's in-session rule — and teaches the
+// monitor that window for that intention. Local API only: the ruling also
+// pins a rule that lives on the monitor's machine.
+export async function saveIntentReview(ids, aligned) {
+  return apiPost('/api/intent-review', { ids, aligned })
 }
 
 // Alert mode: 'focus' (alerts on) or 'tracker' (logs the same, alerts only
