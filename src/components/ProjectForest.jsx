@@ -6,7 +6,7 @@ import {
 } from '../lib/projectLife'
 import {
   ambientSpans, defsFor, drawBackdrop, drawLandmark, drawTree, durationMin, el, fmtDate,
-  foliageFill, hillY, jitter, parseTs, pts, sessionCategory, speciesFor,
+  foliageFill, hillY, jitter, parseTs, pts, sessionCategory, speciesFor, addHalo,
 } from '../lib/forestDraw'
 
 // The project forest: one ecosystem per project, centred on a single tree
@@ -81,6 +81,7 @@ function drawElement(kind, fill, sc, seed) {
   if (kind === 'stone') {
     el('ellipse', { cx: 0, cy: 0, rx: (11 * v(1, 0.25) * sc).toFixed(1), ry: (6 * v(2, 0.2) * sc).toFixed(1), fill: 'var(--ff-stone)' }, g)
     el('ellipse', { cx: (-3 * sc).toFixed(1), cy: (-2 * sc).toFixed(1), rx: (5 * sc).toFixed(1), ry: (2.2 * sc).toFixed(1), fill: '#fff', opacity: 'var(--ff-hi-o)' }, g)
+    addHalo(g)
     return g
   }
   if (kind === 'fern') {
@@ -91,6 +92,7 @@ function drawElement(kind, fill, sc, seed) {
         transform: `rotate(${ang.toFixed(1)} 0 0)`, style: `fill:${fill}`, opacity: '.9',
       }, g)
     }
+    addHalo(g, 2)
     return g
   }
   const st = { style: `fill:${fill}` }
@@ -100,9 +102,17 @@ function drawElement(kind, fill, sc, seed) {
   lobe(0, -12 * v(5, 0.15), 9.5 * v(6, 0.15), st)
   lobe(-3, -14, 3.5, { fill: '#fff', opacity: 'var(--ff-hi-o)' })
   lobe(6, -5, 3.5, { fill: '#000', opacity: 'var(--ff-lo-o)' })
+  addHalo(g)
   if (kind === 'bloom') {
-    for (let i = 0; i < 6; i++) {
-      lobe((jitter(seed * 11 + 20 + i) - 0.5) * 20, -8 - jitter(seed * 11 + 30 + i) * 12, 1.9, { fill: 'var(--ff-bloom)', opacity: '.95' })
+    // Flowers big enough to read as flowers from across the card: a bloom
+    // in the accent pink with a bright heart, scattered over the top of the
+    // bush. Six 2px specks were indistinguishable from the bush's own
+    // highlights.
+    for (let i = 0; i < 7; i++) {
+      const fx = (jitter(seed * 11 + 20 + i) - 0.5) * 22
+      const fy = -9 - jitter(seed * 11 + 30 + i) * 12
+      lobe(fx, fy, 3.4, { fill: 'var(--ff-bloom)' })
+      lobe(fx, fy, 1.3, { fill: 'var(--ff-bloom-heart)' })
     }
   }
   return g
@@ -584,14 +594,10 @@ export default function ProjectForest({ projects, sessions, onPick, underForest 
 
 // Colours the ecosystems add to the shared forest palette.
 const ECO_CSS = `
-.ff-root{--ff-snag:#7A6653; --ff-bloom:#F2A9C3; --ff-bird:#3F4A3B; --ff-fur:#C9B79A}
-.dark .ff-root{--ff-snag:#4E4036; --ff-bloom:#B86F8E; --ff-bird:#8E9A8A; --ff-fur:#7C7160}
+.ff-root{--ff-snag:#7A6653; --ff-bloom:#EE6FA3; --ff-bloom-heart:#FFF2C9; --ff-bird:#3F4A3B; --ff-fur:#C9B79A}
+.dark .ff-root{--ff-snag:#4E4036; --ff-bloom:#F08DBB; --ff-bloom-heart:#FFE7A6; --ff-bird:#8E9A8A; --ff-fur:#7C7160}
 .ff-wilting .ff-sway [style]{opacity:.55}
 .ff-dormant .ff-sway [style]{opacity:.7}
 .ff-dormant .ff-sway,.ff-wilting .ff-sway{animation:none}
 .ff-critter{pointer-events:none}
-.ff-tree.ff-hot .ff-grow>circle[style],.ff-tree.ff-hot .ff-grow>ellipse[style]{
-  stroke:#FFFFFF; stroke-width:1.6; paint-order:stroke; vector-effect:non-scaling-stroke;
-  animation:ff-outline 1.1s ease-in-out infinite}
-.dark .ff-tree.ff-hot .ff-grow>circle[style],.dark .ff-tree.ff-hot .ff-grow>ellipse[style]{stroke:#FFF3C4}
 `

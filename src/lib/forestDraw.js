@@ -188,6 +188,29 @@ export function drawBackdrop(svg, uid, seedOff) {
   }
 }
 
+// A buffer around a plant: the same shapes again, behind it, fattened by a
+// ground-coloured stroke. Two plants of the same green standing one in front
+// of the other used to merge into one blob; the halo keeps a thin band of
+// ground between them. Highlights, shading and the shadow are skipped —
+// they lie inside the silhouette anyway.
+export function addHalo(group, width = 2.6) {
+  const halo = el('g', { class: 'ff-halo' })
+  for (const node of Array.from(group.children)) {
+    const f = node.getAttribute('fill')
+    if (node.tagName === 'g' || f === '#fff' || f === '#000') continue
+    const c = node.cloneNode(false)
+    c.removeAttribute('style')
+    c.removeAttribute('class')
+    c.setAttribute('fill', 'var(--ff-halo)')
+    c.setAttribute('stroke', 'var(--ff-halo)')
+    c.setAttribute('stroke-width', (width * 2).toFixed(1))
+    c.setAttribute('stroke-linejoin', 'round')
+    halo.appendChild(c)
+  }
+  if (halo.childElementCount) group.insertBefore(halo, group.firstChild)
+  return halo
+}
+
 export function tinyPine(parent, x, y, s) {
   const g = el('g', { transform: `translate(${x.toFixed(1)},${y.toFixed(1)})` }, parent)
   el('polygon', { points: pts([[-16, 0], [16, 0], [0, -46]], s), fill: 'var(--ff-treeline)' }, g)
@@ -211,8 +234,16 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
   // No filter on the tree itself: sway must stay a pure composited transform.
   const inner = el('g', {}, sway)
   const trunkH = (kind === 'other' ? 34 : 19) * th
+  // The trunk runs up to the heart of the lowest lobe, not just to where the
+  // canopy nominally starts: the lobes wander and shrink with the seed, and
+  // a trunk that stopped at the nominal line was left floating under a gap
+  // on the round canopies. Drawn first, so the foliage covers the extra.
+  const trunkTop = kind === 'leaf' ? 40 * th
+    : kind === 'maple' ? 46 * th
+    : (kind === 'pine' || kind === 'cypress' || kind === 'other') ? trunkH
+    : 27 * th
   el('polygon', {
-    points: pts([[-3.6, 0], [3.6, 0], [2.4 + L, -trunkH], [-2.4 + L, -trunkH]], sc),
+    points: pts([[-3.6, 0], [3.6, 0], [2.4 + L, -trunkTop], [-2.4 + L, -trunkTop]], sc),
     fill: kind === 'other' ? 'var(--ff-stone)' : 'var(--ff-trunk)',
   }, inner)
   const lobe = (cx, cy, r, extra) => el('circle', { cx: (cx * sc).toFixed(1), cy: (cy * sc).toFixed(1), r: (r * sc).toFixed(1), ...extra }, inner)
@@ -263,6 +294,7 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
     lobe(L - 6, -33 * th, 6, hi)
     lobe(L + 9, -23 * th, 6, lo)
   }
+  addHalo(inner)
   return g
 }
 
@@ -366,6 +398,7 @@ export const FOREST_CSS = `
   --ff-ridge-far:#1B2A24; --ff-ridge-mid:#1F3020; --ff-ground:#25361E;
   --ff-ground-front:#1E2D18; --ff-flower:#394430;
 }
+.ff-grove{--ff-halo:var(--ff-ground)}
 .ff-scroller{display:flex; gap:20px; overflow-x:auto; scroll-snap-type:x mandatory; padding:4px 4px 8px; scrollbar-width:none}
 .ff-scroller::-webkit-scrollbar{display:none}
 .ff-grove{flex:0 0 min(92%,860px); scroll-snap-align:center; border-radius:16px; overflow:hidden; position:relative;
@@ -374,12 +407,6 @@ export const FOREST_CSS = `
 .ff-grove svg{display:block; width:100%; height:auto}
 .ff-tree{cursor:pointer}
 .ff-tree:focus-visible{outline:none}
-.ff-tree.ff-hot .ff-sway [style],.ff-tree.ff-hot .ff-sway polygon[fill^="var("]{
-  stroke:#FFFFFF; stroke-width:1.6; paint-order:stroke; stroke-linejoin:round;
-  vector-effect:non-scaling-stroke; animation:ff-outline 1.1s ease-in-out infinite;
-}
-.dark .ff-tree.ff-hot .ff-sway [style],.dark .ff-tree.ff-hot .ff-sway polygon[fill^="var("]{stroke:#FFF3C4}
-@keyframes ff-outline{0%,100%{stroke-opacity:.35}50%{stroke-opacity:1}}
 .ff-grow{transform-box:fill-box; transform-origin:50% 100%; transform:scale(0)}
 .ff-grow.in{transform:scale(1); transition:transform .6s cubic-bezier(.34,1.5,.64,1)}
 .ff-grow.ff-instant{transition:none}
