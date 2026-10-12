@@ -14,6 +14,7 @@ import ForestPanel from './components/ForestPanel'
 import ProjectsPanel from './components/ProjectsPanel'
 import MonitorBanner from './components/MonitorBanner'
 import ModeToggle from './components/ModeToggle'
+import PipelineBanner from './components/PipelineBanner'
 
 function TabBar({ tab, setTab }) {
   const tabs = [
@@ -100,6 +101,7 @@ function App() {
         </div>
 
         <MonitorBanner />
+        <PipelineBanner />
 
         {tab === 'overview' && (
           <>
