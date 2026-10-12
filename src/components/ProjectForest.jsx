@@ -64,10 +64,16 @@ function drawSnag(sc, seed = 0) {
 }
 
 // What a session grows into. Quality decides the kind, minutes the size.
+// A flowering bush is the best kind of session: 85%+ align held for at
+// least BLOOM_MIN minutes. 45 rather than 60: an hour of unbroken focus is
+// a rare thing, and the flowers are meant to be earned often enough to
+// want them.
+const BLOOM_MIN = 45
+const BLOOM_ALIGN = 0.85
 function elementKind(s) {
   const a = s.avg_align
   const mins = durationMin(s)
-  if (a != null && a >= 0.85 && mins >= 60) return 'bloom'
+  if (a != null && a >= BLOOM_ALIGN && mins >= BLOOM_MIN) return 'bloom'
   if (isWatering(s)) return 'bush'
   if (a == null || a >= 0.5) return 'fern'
   return 'stone'
@@ -569,7 +575,7 @@ export default function ProjectForest({ projects, sessions, onPick, underForest 
         <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-lg shadow-md p-5">
           <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500 mb-3">Every session is a plant</p>
           <ul className="text-xs text-slate-500 dark:text-slate-400 space-y-1.5">
-            <li><span className="font-semibold text-slate-700 dark:text-slate-200">Flowering bush</span> · an hour or more at 85%+ align</li>
+            <li><span className="font-semibold text-slate-700 dark:text-slate-200">Flowering bush</span> · {BLOOM_MIN} minutes or more at {Math.round(BLOOM_ALIGN * 100)}%+ align</li>
             <li><span className="font-semibold text-slate-700 dark:text-slate-200">Bush</span> · a watering: {Math.round(WATER_MIN_ALIGN * 100)}%+ align</li>
             <li><span className="font-semibold text-slate-700 dark:text-slate-200">Fern</span> · finished, but drifting; counts as hours, not water</li>
             <li><span className="font-semibold text-slate-700 dark:text-slate-200">Stone</span> · finished, mostly off intention</li>
