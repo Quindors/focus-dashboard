@@ -249,14 +249,22 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
   const lobe = (cx, cy, r, extra) => el('circle', { cx: (cx * sc).toFixed(1), cy: (cy * sc).toFixed(1), r: (r * sc).toFixed(1), ...extra }, inner)
   const hi = { fill: '#fff', opacity: 'var(--ff-hi-o)' }
   const lo = { fill: '#000', opacity: 'var(--ff-lo-o)' }
+  // Where a bird can stand: a point on the canopy's upper surface, a little
+  // right of centre, from the same seeded geometry the canopy is drawn
+  // with. Published on the group (g.perch, in the group's own scaled
+  // units) so the caller never has to guess a height per species.
+  let perch
   if (kind === 'pine') {
     const w = v(5, 0.12), h = v(6, 0.1)
+    // on the right slope of the middle tier, part-way up
+    perch = [16 * w + (L * 1.3 - 16 * w) * 0.4, -29 * h - 29 * h * 0.4]
     el('polygon', { points: pts([[-20 * w, -10 * h], [20 * w, -10 * h], [L, -44 * h]], sc), style: st }, inner)
     el('polygon', { points: pts([[-16 * w, -29 * h], [16 * w, -29 * h], [L * 1.3, -58 * h]], sc), style: st }, inner)
     el('polygon', { points: pts([[-10 * w, -46 * h], [10 * w, -46 * h], [L * 1.6, -71 * h]], sc), style: st }, inner)
     el('polygon', { points: pts([[-16 * w, -29 * h], [L * 1.3, -29 * h], [L * 1.3, -58 * h]], sc), ...hi }, inner)
   } else if (kind === 'cypress') {
     const w = v(5, 0.14), h = v(6, 0.12)
+    perch = [L + 4, -34 * h - 26 * h * Math.sqrt(Math.max(0, 1 - (4 / (10 * w)) ** 2))]
     el('ellipse', { cx: L * sc, cy: -34 * h * sc, rx: 10 * w * sc, ry: 26 * h * sc, style: st }, inner)
     el('ellipse', { cx: L * 1.4 * sc, cy: -56 * h * sc, rx: 5.5 * w * sc, ry: 12 * h * sc, style: st }, inner)
     el('ellipse', { cx: (L - 3) * sc, cy: -42 * h * sc, rx: 4 * sc, ry: 14 * h * sc, ...hi }, inner)
@@ -265,12 +273,14 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
     // Birch: a tall pale trunk with a small, high, airy crown — nothing like
     // the broad round canopies, so an uncategorized session reads at a glance.
     const top = -trunkH
+    perch = [L + 2, top - 6 * v(7, 0.2) - 9 * v(8, 0.15) + 1.5]
     lobe(L, top - 6 * v(7, 0.2), 9 * v(8, 0.15), { style: st })
     lobe(L - 7 * v(9, 0.3), top + 2, 6.5 * v(10, 0.2), { style: st })
     lobe(L + 7 * v(11, 0.3), top - 1, 6 * v(12, 0.2), { style: st })
     lobe(L - 2, top - 9, 3.5, hi)
   } else if (kind === 'leaf') {
     const w = v(5, 0.12)
+    perch = [L + 6, -40 * th - Math.sqrt(Math.max(0, (23 * w) ** 2 - 36))]
     lobe(L, -40 * th, 23 * w, { style: st })
     lobe(L - 13 * v(7, 0.25), -29 * th, 13 * v(8, 0.2), { style: st })
     lobe(L + 13 * v(9, 0.25), -29 * th, 13 * v(10, 0.2), { style: st })
@@ -279,6 +289,7 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
     lobe(L + 10, -30 * th, 9, lo)
   } else if (kind === 'maple') {
     const w = v(5, 0.15)
+    perch = [L + 5, -46 * th - Math.sqrt(Math.max(0, (17 * v(9, 0.12)) ** 2 - 25))]
     lobe(L - 13 * v(7, 0.25), -31 * th, 14 * w, { style: st })
     lobe(L + 13 * v(8, 0.25), -31 * th, 14 * w, { style: st })
     lobe(L, -46 * th, 17 * v(9, 0.12), { style: st })
@@ -287,6 +298,7 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
     lobe(L + 11, -29 * th, 8, lo)
   } else {
     const w = v(5, 0.15)
+    perch = [L + 6, -27 * th - 15 * v(6, 0.15) * Math.sqrt(Math.max(0, 1 - (6 / (20 * w)) ** 2))]
     el('ellipse', { cx: L * sc, cy: -27 * th * sc, rx: 20 * w * sc, ry: 15 * v(6, 0.15) * sc, style: st }, inner)
     lobe(L - 11 * v(7, 0.3), -36 * th, 7 * v(8, 0.25), { style: st })
     lobe(L + 11 * v(9, 0.3), -33 * th, 6 * v(10, 0.25), { style: st })
@@ -295,6 +307,7 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
     lobe(L + 9, -23 * th, 6, lo)
   }
   addHalo(inner)
+  g.perch = { x: perch[0] * sc, y: perch[1] * sc }
   return g
 }
 

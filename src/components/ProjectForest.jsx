@@ -263,8 +263,10 @@ function renderEcosystem(svg, tip, life, uid, seedOff, onPick) {
     class: `ff-tree ff-center ff-${life.state}`, transform: 'translate(500,476)', tabindex: '0',
     'aria-label': `${p.name}, ${STATES[life.state].label}`,
   })
-  if (life.state === 'dead') center.appendChild(drawSnag(Math.max(sc, 0.9), seedOff + 99))
-  else center.appendChild(drawTree(sp.kind, treeFill(sp.kind, life), sc, uid, seedOff + 99))
+  const tree = life.state === 'dead'
+    ? drawSnag(Math.max(sc, 0.9), seedOff + 99)
+    : drawTree(sp.kind, treeFill(sp.kind, life), sc, uid, seedOff + 99)
+  center.appendChild(tree)
   attachTip(center, svg, tip, () => {
     const n = life.lifeWaterings.length
     const last = life.lifeWaterings.length ? `last watered ${fmtDate(life.lifeWaterings[n - 1].ended_at)}` : 'never watered'
@@ -275,12 +277,36 @@ function renderEcosystem(svg, tip, life, uid, seedOff, onPick) {
   })
   layer.push({ y: 476, node: center })
 
-  // Sessions of the current life, oldest nearest the tree.
+  // Sessions of the current life, oldest nearest the tree. The spiral says
+  // where each one would like to stand; the ground says where it can. A
+  // plant never lands on the tree, on an earned landmark (a bush in the
+  // pond, a bush on the bench) or on another plant: each one tries up to
+  // thirty spots — the same ring at other angles, then wider rings — and
+  // keeps the first with daylight around it, or failing that the roomiest.
+  const obstacles = [{ x: 500, y: 476, r: 26 * sc }]
+  earned.filter((f) => f.spot).forEach((f) => obstacles.push({ x: f.spot[0], y: f.spot[1], r: f.spot[2] }))
+  const placed = []
+  const roomAt = (x, y, r) => {
+    let gap = Infinity
+    for (const o of obstacles) gap = Math.min(gap, Math.hypot(o.x - x, (o.y - y) * 2) - (o.r + r))
+    for (const q of placed) gap = Math.min(gap, Math.hypot(q.x - x, (q.y - y) * 1.6) - (q.r + r))
+    return gap
+  }
   life.lifeRows.forEach((s, i) => {
     const kind = elementKind(s)
-    const { x, y } = spiralSpot(i, seedOff)
     const mins = durationMin(s)
     const esc = 1.05 + Math.min(1, mins / 120) * 0.6
+    const pr = 11 * esc
+    let best = null
+    for (let k = 0; k < 30; k++) {
+      const spread = 1 + Math.floor(k / 10) * 0.18
+      const c = spiralSpot(i, seedOff + k * 131, spread)
+      const gap = roomAt(c.x, c.y, pr)
+      if (best === null || gap > best.gap) best = { x: c.x, y: c.y, gap }
+      if (gap >= 3) break
+    }
+    placed.push({ x: best.x, y: best.y, r: pr })
+    const { x, y } = best
     const fill = foliageFill(speciesFor(sessionCategory(s) || p.category).kind, s.avg_align)
     const g = el('g', {
       class: 'ff-tree ff-plant', transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, tabindex: '0',
@@ -297,7 +323,12 @@ function renderEcosystem(svg, tip, life, uid, seedOff, onPick) {
 
   layer.sort((a, b) => a.y - b.y).forEach(({ node }) => svg.insertBefore(node, fgBand))
   const critters = el('g', {}, svg)
-  if (earned.some((f) => f.id === 'bird') && life.state !== 'dead') drawBird(critters, 500 + 14 * sc, 476 - 52 * sc, 0.9 + sc * 0.3)
+  if (earned.some((f) => f.id === 'bird') && life.state !== 'dead') {
+    // On the canopy, where this tree says its top is; the belly sits on it.
+    const perch = tree.perch || { x: 14 * sc, y: -52 * sc }
+    const bsc = 0.9 + sc * 0.3
+    drawBird(critters, 500 + perch.x, 476 + perch.y - 3.2 * bsc, bsc)
+  }
   if (earned.some((f) => f.id === 'rabbit')) drawRabbit(critters, 610, 500, 1.1)
   growIn(svg, `${p.id}:${life.lifeRows.length}:${life.state}:${life.snags}`)
 }
