@@ -106,28 +106,75 @@ export function defsFor(svg, uid) {
   el('feGaussianBlur', { stdDeviation: '7' }, soft)
 }
 
+// Tonight's moon. Phase 0 is new, 0.5 full, from the mean synodic month
+// counted off a known new moon (2000-01-06 18:14 UTC): good to a few hours,
+// which is all a 46-pixel moon can show.
+export function moonPhase(date = new Date()) {
+  const synodic = 29.530588853
+  const age = ((date.getTime() - Date.UTC(2000, 0, 6, 18, 14)) / 86400000) % synodic
+  return ((age % synodic) + synodic) % synodic / synodic
+}
+export function moonLitFraction(phase) {
+  return (1 - Math.cos(phase * Math.PI * 2)) / 2
+}
+// The lit face as a path: a half-disc on the lit side closed by the
+// terminator, an ellipse whose width follows the phase and which bulges
+// toward the lit side when the moon is a crescent and away when gibbous.
+// Waxing moons are lit on the right, as seen from the northern hemisphere.
+export function moonLitPath(cx, cy, r, phase) {
+  const k = moonLitFraction(phase)
+  if (k < 0.02) return null
+  if (k > 0.98) return `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx} ${cy + r} A ${r} ${r} 0 1 1 ${cx} ${cy - r} Z`
+  const e = Math.abs(Math.cos(phase * Math.PI * 2)) * r
+  const waxing = phase < 0.5
+  const gibbous = phase > 0.25 && phase < 0.75
+  const outer = `A ${r} ${r} 0 0 ${waxing ? 1 : 0} ${cx} ${cy + r}`
+  const sweep = waxing ? (gibbous ? 1 : 0) : (gibbous ? 0 : 1)
+  return `M ${cx} ${cy - r} ${outer} A ${e.toFixed(2)} ${r} 0 0 ${sweep} ${cx} ${cy - r} Z`
+}
+
 export function drawBackdrop(svg, uid, seedOff) {
   el('rect', { x: 0, y: 0, width: 1000, height: 520, fill: `url(#sky${uid})` }, svg)
   const stars = el('g', { opacity: 'var(--ff-stars-o)' }, svg)
   for (let i = 0; i < 40; i++) {
-    el('circle', {
+    // Each star's rest brightness is a custom property, so the twinkle
+    // keyframes can dim it from its own level. Not every star twinkles,
+    // and no two on the same beat.
+    const o = (0.4 + jitter(i + 900 + seedOff) * 0.6).toFixed(2)
+    const star = el('circle', {
       cx: (jitter(i + 300 + seedOff) * 980 + 10).toFixed(0),
       cy: (jitter(i + 500 + seedOff) * 250 + 8).toFixed(0),
       r: (0.7 + jitter(i + 700 + seedOff) * 0.9).toFixed(2),
-      fill: '#EDF2E0', opacity: (0.4 + jitter(i + 900 + seedOff) * 0.6).toFixed(2),
+      fill: '#EDF2E0', opacity: o,
     }, stars)
+    if (jitter(i + 1900 + seedOff) < 0.65) {
+      star.setAttribute('class', 'ff-star')
+      star.style.setProperty('--o', o)
+      star.style.animationDuration = (2.2 + jitter(i + 2000 + seedOff) * 3.4).toFixed(2) + 's'
+      star.style.animationDelay = (-jitter(i + 2100 + seedOff) * 6).toFixed(2) + 's'
+    }
   }
   const sun = el('g', { opacity: 'var(--ff-sun-o)' }, svg)
   el('circle', { cx: 850, cy: 96, r: 110, fill: `url(#glow${uid})` }, sun)
   el('circle', { cx: 850, cy: 96, r: 34, fill: '#F8DC96' }, sun)
-  // A full moon with faint maria, and only a tight halo — a big radial glow
-  // read as a strange "earth shadow" ring, which real moons don't have.
+  // The moon in tonight's phase, with faint maria on the lit part, and only
+  // a tight halo — a big radial glow read as a strange "earth shadow" ring,
+  // which real moons don't have. The dark side is a shade above the sky, so
+  // a new moon is still just there.
   const moon = el('g', { opacity: 'var(--ff-moon-o)' }, svg)
-  el('circle', { cx: 850, cy: 96, r: 38, fill: `url(#mglow${uid})` }, moon)
-  el('circle', { cx: 850, cy: 96, r: 23, fill: '#E9E4CB' }, moon)
-  el('circle', { cx: 843, cy: 90, r: 5, fill: '#DAD4B4' }, moon)
-  el('circle', { cx: 856, cy: 103, r: 3.5, fill: '#DAD4B4' }, moon)
-  el('circle', { cx: 858, cy: 89, r: 2.5, fill: '#DAD4B4' }, moon)
+  const phase = moonPhase()
+  const lit = moonLitPath(850, 96, 23, phase)
+  el('circle', { cx: 850, cy: 96, r: 38, fill: `url(#mglow${uid})`, opacity: (0.35 + 0.65 * moonLitFraction(phase)).toFixed(2) }, moon)
+  el('circle', { cx: 850, cy: 96, r: 23, fill: '#2B3331' }, moon)
+  if (lit) {
+    el('path', { d: lit, fill: '#E9E4CB' }, moon)
+    const clip = el('clipPath', { id: 'moonlit' + uid }, moon)
+    el('path', { d: lit }, clip)
+    const maria = el('g', { 'clip-path': `url(#moonlit${uid})` }, moon)
+    el('circle', { cx: 843, cy: 90, r: 5, fill: '#DAD4B4' }, maria)
+    el('circle', { cx: 856, cy: 103, r: 3.5, fill: '#DAD4B4' }, maria)
+    el('circle', { cx: 858, cy: 89, r: 2.5, fill: '#DAD4B4' }, maria)
+  }
   ;[[170, 100, 64, 0], [520, 66, 48, 1], [730, 140, 55, 2]].forEach((c) => {
     const g = el('g', { class: 'ff-drift', opacity: '.8' }, svg)
     g.style.animationDelay = -c[3] * 30 + 's'
@@ -551,8 +598,10 @@ export const FOREST_CSS = `
 .ff-grow.in{transform:scale(1); transition:transform .6s cubic-bezier(.34,1.5,.64,1)}
 .ff-grow.ff-instant{transition:none}
 .ff-sway{transform-box:fill-box; transform-origin:50% 100%; animation:ff-sway 7s ease-in-out infinite alternate}
-.ff-sway,.ff-drift,.ff-mist,.ff-ambient span{animation-play-state:paused}
-.ff-live .ff-sway,.ff-live .ff-drift,.ff-live .ff-mist,.ff-live .ff-ambient span{animation-play-state:running}
+.ff-sway,.ff-drift,.ff-mist,.ff-star,.ff-ambient span{animation-play-state:paused}
+.ff-live .ff-sway,.ff-live .ff-drift,.ff-live .ff-mist,.ff-live .ff-star,.ff-live .ff-ambient span{animation-play-state:running}
+.ff-star{animation:ff-twinkle 3s ease-in-out infinite}
+@keyframes ff-twinkle{0%,100%{opacity:var(--o)}50%{opacity:calc(var(--o) * .2)}}
 @keyframes ff-sway{from{transform:rotate(-.6deg)}to{transform:rotate(.6deg)}}
 .ff-drift{animation:ff-drift 90s ease-in-out infinite alternate}
 @keyframes ff-drift{from{transform:translateX(0)}to{transform:translateX(30px)}}
@@ -599,7 +648,7 @@ export const FOREST_CSS = `
 .dark .ff-tip-m{color:#94a3b8}
 @media (prefers-reduced-motion: reduce){
   .ff-grow{transform:scale(1)} .ff-grow.in{transition:none}
-  .ff-drift,.ff-sway,.ff-mist{animation:none}
+  .ff-drift,.ff-sway,.ff-mist,.ff-star{animation:none}
   .ff-ambient{display:none}
 }
 `

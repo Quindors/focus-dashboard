@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import EdgeArrows from './EdgeArrows'
 import { fetchCategories, fetchProjects, fetchSessions, isMonitorLive, pickableCategory, setSessionCategory, setSessionProject } from '../lib/dataSource'
 import ErrorNote from './ErrorNote'
 import ProjectForest from './ProjectForest'
@@ -319,7 +320,13 @@ function Grove({ monthKey: key, sessions, idx, earnedHere, whisperText, durCap, 
             ? <span key={i} className="ff-fly" style={{ left: `${a.left}%`, top: `${a.top}%`, animationDelay: `${a.delay.toFixed(2)}s`, animationDuration: `${a.dur.toFixed(2)}s` }} />
             : <span key={i} className="ff-petal" style={{ left: `${a.left}%`, animationDelay: `${a.delay.toFixed(2)}s`, animationDuration: `${a.dur.toFixed(2)}s`, background: a.pink ? 'var(--ff-cherry-0)' : 'var(--ff-leaf-0)' }} />)}
           <span className="ff-bird" style={{ animationDelay: `${-(idx * 13)}s` }}>
-            <svg width="20" height="9" viewBox="0 0 20 9"><path d="M1 7 Q5.5 1 10 6 Q14.5 1 19 7" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+            <svg width="20" height="9" viewBox="0 0 20 9">
+              <path d="M1 7 Q5.5 1 10 6 Q14.5 1 19 7" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+                {/* wingbeats: the tips swing below the body and back up */}
+                <animate attributeName="d" dur="0.62s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1; 0.4 0 0.6 1"
+                  values="M1 7 Q5.5 1 10 6 Q14.5 1 19 7; M1 3.5 Q5.5 8.5 10 6 Q14.5 8.5 19 3.5; M1 7 Q5.5 1 10 6 Q14.5 1 19 7" />
+              </path>
+            </svg>
           </span>
         </div>
         <div ref={tipRef} className="ff-tip" />
@@ -671,6 +678,7 @@ export default function ForestPanel() {
       </div>
 
 
+      <EdgeArrows scrollerRef={scrollerRef} />
       <div ref={scrollerRef} className="ff-scroller">
         {keys.map((k, i) => (
           <Grove

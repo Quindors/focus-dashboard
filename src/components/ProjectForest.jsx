@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import EdgeArrows from './EdgeArrows'
 import { isMonitorLive } from '../lib/dataSource'
 import Mini from './MiniTree'
 import {
@@ -610,6 +611,7 @@ export default function ProjectForest({ projects, sessions, onPick, underForest 
         )}
       </div>
 
+      <EdgeArrows scrollerRef={scrollerRef} />
       <div ref={scrollerRef} className="ff-scroller">
         {lives.map((l, i) => <Ecosystem key={l.project.id} life={l} idx={i} onPick={onPick} />)}
         {wilds.length > 0 && <Wilds rows={wilds} onPick={onPick} />}
