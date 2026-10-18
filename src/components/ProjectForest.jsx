@@ -288,37 +288,85 @@ function playOnce(node, cls, ms) {
   node._once = setTimeout(() => { node.classList.remove(cls); node._once = null }, ms)
 }
 
+// An animal reacts only from rest: not while it is already startled or
+// bolting, and not in the middle of an idle hop or peck — a reaction
+// that cut in then would snap it to a new pose. "At rest" means every
+// animated part of it is at its identity transform right now.
+function atRest(spot, reactionCls) {
+  if (spot.querySelector(`.${reactionCls}`)) return false
+  for (const n of spot.querySelectorAll('.ff-perched, .ff-perched-head, .ff-perched-tail, .ff-perched-wing, .ff-rabbit, .ff-rabbit-ear')) {
+    const t = getComputedStyle(n).transform
+    if (t === 'none') continue
+    const m = t.match(/matrix\(([^)]+)\)/)
+    if (!m) return false
+    const [a, b, c, d, e, f] = m[1].split(',').map(Number)
+    if (Math.abs(a - 1) > 0.02 || Math.abs(b) > 0.02 || Math.abs(c) > 0.02 || Math.abs(d - 1) > 0.02 || Math.abs(e) > 0.6 || Math.abs(f) > 0.6) return false
+  }
+  return true
+}
+
 // The effects layer sits above everything; what it holds is short-lived.
 function fxLayer(svg) {
   return svg.querySelector('.ff-fx') || el('g', { class: 'ff-fx', 'pointer-events': 'none' }, svg)
 }
-// Leaves (or petals) shaken loose: a handful of specks that tumble down,
-// drifting a little sideways, and LAND — on the ground at the foot of
-// whatever shed them, where they lie for a few seconds before they fade.
-// Each speck gets its own drift, spin and fall as CSS variables so one
-// keyframe set serves them all; the fall's length sets its time, so a
-// leaf from a tall canopy takes longer than one from a bush.
+// Leaves (or petals) shaken loose: a handful of leaves that tumble down,
+// wavering sideways, and LAND — on the ground at the foot of whatever
+// shed them, where they lie for a few seconds before they fade. Nothing
+// here is seeded: every shake is its own (unlike the plants, which must
+// stand where they stood). How many fall, each leaf's size and shape and
+// starting angle, its tint (a shade off the plant's own colour), its
+// waver and spin, how fast it goes and where exactly it comes to rest
+// are all drawn fresh, as CSS variables so one keyframe set serves them
+// all; the fall's length sets its time, so a leaf from a tall canopy
+// takes longer than one from a bush.
 const REST_MS = 7000
-function shed(svg, x, y, n, fill, spread = 24, seed = 0, groundY = y) {
+const rnd = (lo, hi) => lo + Math.random() * (hi - lo)
+// Where a tree's leaves let go: the underside of its canopy. Measured from
+// the foliage shapes themselves (the ones painted with an inline fill —
+// trunk, limbs, highlights and halo are attribute-filled), in the tree's
+// own scaled coordinates, so it holds for every species and size.
+function canopyFoot(tree) {
+  const canopy = tree.querySelector('.ff-canopy') || tree
+  let x0 = Infinity, x1 = -Infinity, bottom = -Infinity, top = Infinity
+  for (const n of canopy.querySelectorAll('circle, ellipse, polygon, path')) {
+    if (!n.style.fill || n.closest('.ff-halo')) continue
+    const b = n.getBBox()
+    x0 = Math.min(x0, b.x); x1 = Math.max(x1, b.x + b.width)
+    bottom = Math.max(bottom, b.y + b.height); top = Math.min(top, b.y)
+  }
+  if (!Number.isFinite(bottom)) return null
+  return { x0, x1, bottom, top }
+}
+// origin(): a fresh start point for each leaf, in scene coordinates.
+function shed(svg, origin, n, fill, groundY) {
   const fx = fxLayer(svg)
   const made = []
   const ground = Math.min(486, groundY)
-  for (let i = 0; i < n; i++) {
-    const j = (k) => jitter(seed * 17 + i * 5 + k)
-    const cy = y + (j(2) - 0.5) * spread * 0.5
-    const land = ground + (j(5) - 0.5) * 6
+  const count = Math.max(3, n + Math.round(rnd(-2, 3)))
+  for (let i = 0; i < count; i++) {
+    const { x, y } = origin()
+    const cy = y
+    // Where it lands: around the foot, a little wider for a longer fall.
+    const land = ground + rnd(-3, 3)
     const dist = Math.max(8, land - cy)
-    const c = el('circle', {
+    const r = rnd(1.5, 3.6)
+    const leaf = Math.random() < 0.7   // most are leaf-shaped, a few round
+    const c = el('ellipse', {
       class: 'ff-shed',
-      cx: (x + (j(1) - 0.5) * spread).toFixed(1), cy: cy.toFixed(1),
-      r: (1.8 + j(3) * 1.8).toFixed(1), opacity: '.95', 'data-ground': land.toFixed(1),
+      cx: x.toFixed(1), cy: cy.toFixed(1),
+      rx: (leaf ? r * rnd(1.3, 1.8) : r).toFixed(1), ry: (leaf ? r * rnd(0.55, 0.8) : r).toFixed(1),
+      opacity: '.95', 'data-ground': land.toFixed(1),
     }, fx)
-    c.style.fill = fill
-    c.style.setProperty('--dx', `${((j(4) - 0.5) * Math.min(60, 16 + dist * 0.5)).toFixed(0)}px`)
+    c.style.fill = `color-mix(in oklab, ${fill} ${Math.round(rnd(68, 100))}%, ${Math.random() < 0.5 ? 'white' : 'black'})`
+    const drift = rnd(-1, 1) * Math.min(70, 14 + dist * 0.6)
+    c.style.setProperty('--dx', `${drift.toFixed(0)}px`)
+    c.style.setProperty('--sx', `${(drift * rnd(0.2, 0.8) + rnd(-14, 14)).toFixed(0)}px`)
     c.style.setProperty('--dy', `${dist.toFixed(1)}px`)
-    c.style.setProperty('--rot', `${(180 + j(6) * 300).toFixed(0)}deg`)
-    c.style.animationDuration = `${(0.5 + dist / 110 + j(7) * 0.3).toFixed(2)}s, ${REST_MS}ms`
-    c.style.animationDelay = `${(j(8) * 0.12).toFixed(2)}s, 0s`
+    c.style.setProperty('--rot0', `${rnd(0, 360).toFixed(0)}deg`)
+    c.style.setProperty('--rot', `${rnd(0, 360).toFixed(0)}deg`)
+    c.style.setProperty('--spin', `${(rnd(-1, 1) * rnd(120, 420)).toFixed(0)}deg`)
+    c.style.animationDuration = `${(0.45 + dist / rnd(80, 140) + rnd(0, 0.4)).toFixed(2)}s, ${REST_MS}ms`
+    c.style.animationDelay = `${rnd(0, 0.25).toFixed(2)}s, 0s`
     made.push(c)
   }
   setTimeout(() => made.forEach((c) => c.remove()), REST_MS + 200)
@@ -469,8 +517,11 @@ function renderEcosystem(svg, tip, life, uid, seedOff, api) {
       if (life.state === 'dead') playOnce(tree.querySelector('.ff-rustle'), 'ff-rustling', 800)
       else {
         playOnce(center, 'ff-shaking', 900)
-        const perch = tree.perch || { x: 0, y: -52 * sc }
-        shed(svg, 500 + perch.x * 0.3, 476 + perch.y + 14 * sc, 10 + Math.round(sc * 3), fill, 70 * sc, seedOff + 5, 478)
+        // Only from the underside of the canopy, across its width.
+        const foot = canopyFoot(tree) || { x0: -20 * sc, x1: 20 * sc, bottom: -30 * sc, top: -60 * sc }
+        const w = foot.x1 - foot.x0
+        shed(svg, () => ({ x: 500 + foot.x0 + w * rnd(0.12, 0.88), y: 476 + foot.bottom - rnd(0, Math.min(8, (foot.bottom - foot.top) * 0.15)) }),
+          10 + Math.round(sc * 3), fill, 478)
         if (reactions.bird) reactions.bird()
         if (reactions.rabbit) reactions.rabbit()
       }
@@ -533,7 +584,11 @@ function renderEcosystem(svg, tip, life, uid, seedOff, api) {
       onEnter: () => playOnce(rustle, 'ff-rustling', 800),
       onClick: () => {
         playOnce(rustle, 'ff-rustling', 800)
-        if (kind !== 'stone') shed(svg, x, y - 12 * esc, kind === 'bloom' ? 8 : 5, kind === 'bloom' ? 'var(--ff-bloom)' : pfill, 22 * esc, i + seedOff, y + 2)
+        // From the bush's lower rim, either side.
+        if (kind !== 'stone') {
+          shed(svg, () => { const side = Math.random() < 0.5 ? -1 : 1; return { x: x + side * rnd(4, 11) * esc, y: y - rnd(1, 7) * esc } },
+            kind === 'bloom' ? 8 : 5, kind === 'bloom' ? 'var(--ff-bloom)' : pfill, y + 2)
+        }
         api.pin({
           kind: 'session', title: s.text, s,
           lines: [
@@ -562,7 +617,7 @@ function renderEcosystem(svg, tip, life, uid, seedOff, api) {
     const byTxt = by ? `, ${fmtDate(by.ended_at || by.started_at)}` : ''
     const spot = drawBird(critters, 500 + perch.x, 476 + perch.y - 3.2 * bsc, bsc)
     const flyer = spot.querySelector('.ff-flyer')
-    reactions.bird = () => playOnce(flyer, 'ff-startled', 2400)
+    reactions.bird = () => { if (atRest(spot, 'ff-startled')) playOnce(flyer, 'ff-startled', 2400) }
     attachTip(spot, svg, tip, () => [f.name, `${f.what}${byTxt}`], {
       hint: 'Click to startle it',
       onClick: () => { reactions.bird(); api.pin(critterStory(f, byTxt)) },
@@ -574,7 +629,7 @@ function renderEcosystem(svg, tip, life, uid, seedOff, api) {
     const byTxt = by ? `, ${fmtDate(by.ended_at || by.started_at)}` : ''
     const spot = drawRabbit(critters, 610, 500, 1.1)
     const hopper = spot.querySelector('.ff-hopper')
-    reactions.rabbit = () => playOnce(hopper, 'ff-hopping', 1300)
+    reactions.rabbit = () => { if (atRest(spot, 'ff-hopping')) playOnce(hopper, 'ff-hopping', 1300) }
     attachTip(spot, svg, tip, () => [f.name, `${f.what}${byTxt}`], {
       hint: 'Click and it bolts',
       onClick: () => { reactions.rabbit(); api.pin(critterStory(f, byTxt)) },
@@ -637,8 +692,9 @@ function renderWilds(svg, tip, rows, uid, seedOff, api) {
       hint: 'Click to shake it',
       onClick: () => {
         playOnce(g, 'ff-shaking', 900)
-        const perch = tree.perch || { x: 0, y: -40 * sc }
-        shed(svg, x + perch.x * 0.3, y + perch.y + 10 * sc, 6, fill, 40 * sc, i + seedOff, y + 2)
+        const foot = canopyFoot(tree) || { x0: -16 * sc, x1: 16 * sc, bottom: -24 * sc, top: -50 * sc }
+        const w = foot.x1 - foot.x0
+        shed(svg, () => ({ x: x + foot.x0 + w * rnd(0.12, 0.88), y: y + foot.bottom - rnd(0, Math.min(8, (foot.bottom - foot.top) * 0.15)) }), 6, fill, y + 2)
         api.pin({
           kind: 'wild', title: s.text, s,
           lines: [
@@ -956,16 +1012,20 @@ export default function ProjectForest({ projects, sessions, onPick, underForest 
 
       <EdgeArrows scrollerRef={scrollerRef} />
       <div ref={scrollerRef} className="ff-scroller">
-        {lives.map((l, i) => <Ecosystem key={l.project.id} life={l} idx={i} onPick={onPick} />)}
-        {wilds.length > 0 && <Wilds rows={wilds} onPick={onPick} />}
+        {/* Rewound, the forest is a view of the past: nothing refiles from it. */}
+        {lives.map((l, i) => <Ecosystem key={l.project.id} life={l} idx={i} onPick={at == null ? onPick : null} />)}
+        {wilds.length > 0 && <Wilds rows={wilds} onPick={at == null ? onPick : null} />}
         {!lives.length && !wilds.length && (
           <div className="ff-grove flex items-center justify-center p-10 text-slate-500 dark:text-slate-400 italic font-serif">Nothing had grown yet.</div>
         )}
       </div>
 
       {earliest != null && (
-        <div className="ff-scrub mt-3 flex items-center gap-3 flex-wrap text-sm">
-          <span className="ff-when font-semibold text-slate-700 dark:text-slate-200 tabular-nums min-w-[9.5rem]">
+        // Both ends of the row have fixed widths: the label and the
+        // button/hint change with the scrub, and a track that resized
+        // under the thumb mid-drag threw the value weeks off.
+        <div className="ff-scrub mt-3 flex items-center gap-3 text-sm">
+          <span className="ff-when font-semibold text-slate-700 dark:text-slate-200 tabular-nums w-40 flex-none truncate">
             {at == null ? 'Today' : `As of ${fmtDay(at)}`}
           </span>
           <input
@@ -974,14 +1034,16 @@ export default function ProjectForest({ projects, sessions, onPick, underForest 
             min={earliest} max={realNow} step={HOUR}
             value={now}
             onChange={(e) => scrubTo(Number(e.target.value))}
-            className="grow min-w-[12rem] accent-emerald-500"
+            className="grow min-w-0 accent-emerald-500"
           />
-          {at != null
-            ? <button type="button" onClick={() => setAt(null)} className="text-emerald-600 dark:text-emerald-400 underline underline-offset-4">Back to today</button>
-            : <span className="text-xs text-slate-400 dark:text-slate-500">Drag back to watch the forest grow</span>}
+          <span className="w-44 flex-none truncate">
+            {at != null
+              ? <button type="button" onClick={() => setAt(null)} className="text-emerald-600 dark:text-emerald-400 underline underline-offset-4">Back to today</button>
+              : <span className="text-xs text-slate-400 dark:text-slate-500">Drag back to watch the forest grow</span>}
+          </span>
         </div>
       )}
-      {underForest}
+      {at == null && underForest}
 
       <div className="grid gap-4 grid-cols-1 md:grid-cols-3 mt-6 items-stretch">
         <div className="bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-lg shadow-md p-5">
@@ -1081,7 +1143,11 @@ const ECO_CSS = `
 /* The fall (transform) and the rest-then-fade (opacity) are two animations
    on the same speck, so a leaf stops where it lands and lies there. */
 .ff-shed{transform-box:fill-box; transform-origin:center; animation:ff-shed 1.2s cubic-bezier(.3,.5,.7,1) forwards, ff-shed-rest 7s linear forwards}
-@keyframes ff-shed{0%{transform:translate(0,0) rotate(0)} 100%{transform:translate(var(--dx,0px),var(--dy,60px)) rotate(var(--rot,280deg))}}
+@keyframes ff-shed{
+  0%{transform:translate(0,0) rotate(var(--rot0,0deg))}
+  55%{transform:translate(var(--sx,0px),calc(var(--dy,60px) * .55)) rotate(calc(var(--rot0,0deg) + var(--spin,200deg) * .6))}
+  100%{transform:translate(var(--dx,0px),var(--dy,60px)) rotate(var(--rot,280deg))}
+}
 @keyframes ff-shed-rest{0%,70%{opacity:.95} 100%{opacity:0}}
 .ff-ripple{transform-box:fill-box; transform-origin:center; animation:ff-ripple 1.5s ease-out forwards; opacity:0}
 @keyframes ff-ripple{0%{opacity:.9; transform:scale(1)} 100%{opacity:0; transform:scale(9)}}
