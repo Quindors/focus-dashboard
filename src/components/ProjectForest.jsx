@@ -135,11 +135,11 @@ function drawElement(kind, fill, sc, seed) {
 // when it is off screen, and switch off under prefers-reduced-motion.
 function drawBird(parent, x, y, sc) {
   const spot = el('g', { transform: `translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${sc.toFixed(2)})`, class: 'ff-critter' }, parent)
-  const g = el('g', { class: 'ff-bird' }, spot)
-  el('polygon', { points: '-5,-0.5 -10,-3.5 -8,1', fill: 'var(--ff-bird)', class: 'ff-bird-tail' }, g)
+  const g = el('g', { class: 'ff-perched' }, spot)
+  el('polygon', { points: '-5,-0.5 -10,-3.5 -8,1', fill: 'var(--ff-bird)', class: 'ff-perched-tail' }, g)
   el('ellipse', { cx: 0, cy: 0, rx: 5.5, ry: 3.6, fill: 'var(--ff-bird)' }, g)
-  el('ellipse', { cx: -0.8, cy: -0.4, rx: 3.4, ry: 2, fill: 'var(--ff-bird)', style: 'filter:brightness(.82)', class: 'ff-bird-wing' }, g)
-  const head = el('g', { class: 'ff-bird-head' }, g)
+  el('ellipse', { cx: -0.8, cy: -0.4, rx: 3.4, ry: 2, fill: 'var(--ff-bird)', style: 'filter:brightness(.82)', class: 'ff-perched-wing' }, g)
+  const head = el('g', { class: 'ff-perched-head' }, g)
   el('circle', { cx: 4.5, cy: -2.6, r: 2.4, fill: 'var(--ff-bird)' }, head)
   el('polygon', { points: '6.5,-2.6 9.5,-1.8 6.5,-1', fill: '#E0B04B' }, head)
 }
@@ -618,16 +618,16 @@ const ECO_CSS = `
 .ff-dormant .ff-sway [style]{opacity:.7}
 .ff-dormant .ff-sway,.ff-wilting .ff-sway{animation:none}
 .ff-critter{pointer-events:none}
-.ff-bird,.ff-bird-head,.ff-bird-tail,.ff-bird-wing,.ff-rabbit,.ff-rabbit-ear{transform-box:fill-box; animation-play-state:paused}
-.ff-live .ff-bird,.ff-live .ff-bird-head,.ff-live .ff-bird-tail,.ff-live .ff-bird-wing,.ff-live .ff-rabbit,.ff-live .ff-rabbit-ear{animation-play-state:running}
-.ff-bird{transform-origin:50% 100%; animation:ff-bird-bob 4.3s ease-in-out infinite}
-@keyframes ff-bird-bob{0%,64%,80%,100%{transform:translateY(0)} 68%{transform:translateY(-1.6px)} 72%{transform:translateY(0)} 76%{transform:translateY(-1px)}}
-.ff-bird-head{transform-origin:0% 100%; animation:ff-bird-peck 5.3s ease-in-out infinite}
-@keyframes ff-bird-peck{0%,24%,40%,100%{transform:rotate(0)} 28%{transform:rotate(24deg)} 32%{transform:rotate(2deg)} 36%{transform:rotate(20deg)}}
-.ff-bird-tail{transform-origin:100% 50%; animation:ff-bird-tail 6.1s ease-in-out infinite; animation-delay:-2.2s}
-@keyframes ff-bird-tail{0%,50%,62%,100%{transform:rotate(0)} 54%{transform:rotate(-26deg)} 58%{transform:rotate(6deg)}}
-.ff-bird-wing{transform-origin:50% 0%; animation:ff-bird-wing 7.9s ease-in-out infinite; animation-delay:-4s}
-@keyframes ff-bird-wing{0%,70%,84%,100%{transform:rotate(0)} 74%{transform:rotate(-38deg)} 78%{transform:rotate(-6deg)} 81%{transform:rotate(-30deg)}}
+.ff-perched,.ff-perched-head,.ff-perched-tail,.ff-perched-wing,.ff-rabbit,.ff-rabbit-ear{transform-box:fill-box; animation-play-state:paused}
+.ff-live .ff-perched,.ff-live .ff-perched-head,.ff-live .ff-perched-tail,.ff-live .ff-perched-wing,.ff-live .ff-rabbit,.ff-live .ff-rabbit-ear{animation-play-state:running}
+.ff-perched{transform-origin:50% 100%; animation:ff-perched-bob 4.3s ease-in-out infinite}
+@keyframes ff-perched-bob{0%,64%,80%,100%{transform:translateY(0)} 68%{transform:translateY(-1.6px)} 72%{transform:translateY(0)} 76%{transform:translateY(-1px)}}
+.ff-perched-head{transform-origin:0% 100%; animation:ff-perched-peck 5.3s ease-in-out infinite}
+@keyframes ff-perched-peck{0%,24%,40%,100%{transform:rotate(0)} 28%{transform:rotate(24deg)} 32%{transform:rotate(2deg)} 36%{transform:rotate(20deg)}}
+.ff-perched-tail{transform-origin:100% 50%; animation:ff-perched-tail 6.1s ease-in-out infinite; animation-delay:-2.2s}
+@keyframes ff-perched-tail{0%,50%,62%,100%{transform:rotate(0)} 54%{transform:rotate(-26deg)} 58%{transform:rotate(6deg)}}
+.ff-perched-wing{transform-origin:50% 0%; animation:ff-perched-wing 7.9s ease-in-out infinite; animation-delay:-4s}
+@keyframes ff-perched-wing{0%,70%,84%,100%{transform:rotate(0)} 74%{transform:rotate(-38deg)} 78%{transform:rotate(-6deg)} 81%{transform:rotate(-30deg)}}
 .ff-rabbit{transform-origin:50% 100%; animation:ff-rabbit-hop 13s ease-in-out infinite}
 @keyframes ff-rabbit-hop{
   0%,52%{transform:translate(0,0) scaleX(1)}
@@ -642,6 +642,6 @@ const ECO_CSS = `
 .ff-rabbit-ear-b{animation-duration:6.1s; animation-delay:-2.3s}
 @keyframes ff-rabbit-ear{0%,40%,52%,100%{transform:rotate(0)} 44%{transform:rotate(-14deg)} 48%{transform:rotate(8deg)}}
 @media (prefers-reduced-motion: reduce){
-  .ff-bird,.ff-bird-head,.ff-bird-tail,.ff-bird-wing,.ff-rabbit,.ff-rabbit-ear{animation:none}
+  .ff-perched,.ff-perched-head,.ff-perched-tail,.ff-perched-wing,.ff-rabbit,.ff-rabbit-ear{animation:none}
 }
 `
