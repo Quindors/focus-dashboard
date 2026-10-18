@@ -125,19 +125,31 @@ function drawElement(kind, fill, sc, seed) {
 }
 
 // Company for a well-kept tree. Small, still, and only ever earned.
+// The critters move. Each lives in a static outer group (its spot and
+// size, as attributes) with the animated parts inside, because a CSS
+// animation's transform replaces an attribute transform on the same
+// element. The animations are long loops that are mostly stillness — a
+// peck, a tail flick, a wing stretch; an ear twitch, a short hop out and
+// back — so the scene stays calm and the movement is something you catch
+// rather than something that nags. They pause with the rest of the grove
+// when it is off screen, and switch off under prefers-reduced-motion.
 function drawBird(parent, x, y, sc) {
-  const g = el('g', { transform: `translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${sc.toFixed(2)})`, class: 'ff-critter' }, parent)
+  const spot = el('g', { transform: `translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${sc.toFixed(2)})`, class: 'ff-critter' }, parent)
+  const g = el('g', { class: 'ff-bird' }, spot)
+  el('polygon', { points: '-5,-0.5 -10,-3.5 -8,1', fill: 'var(--ff-bird)', class: 'ff-bird-tail' }, g)
   el('ellipse', { cx: 0, cy: 0, rx: 5.5, ry: 3.6, fill: 'var(--ff-bird)' }, g)
-  el('circle', { cx: 4.5, cy: -2.6, r: 2.4, fill: 'var(--ff-bird)' }, g)
-  el('polygon', { points: '6.5,-2.6 9.5,-1.8 6.5,-1', fill: '#E0B04B' }, g)
-  el('polygon', { points: '-5,-0.5 -10,-3.5 -8,1', fill: 'var(--ff-bird)' }, g)
+  el('ellipse', { cx: -0.8, cy: -0.4, rx: 3.4, ry: 2, fill: 'var(--ff-bird)', style: 'filter:brightness(.82)', class: 'ff-bird-wing' }, g)
+  const head = el('g', { class: 'ff-bird-head' }, g)
+  el('circle', { cx: 4.5, cy: -2.6, r: 2.4, fill: 'var(--ff-bird)' }, head)
+  el('polygon', { points: '6.5,-2.6 9.5,-1.8 6.5,-1', fill: '#E0B04B' }, head)
 }
 function drawRabbit(parent, x, y, sc) {
-  const g = el('g', { transform: `translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${sc.toFixed(2)})`, class: 'ff-critter' }, parent)
+  const spot = el('g', { transform: `translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${sc.toFixed(2)})`, class: 'ff-critter' }, parent)
+  const g = el('g', { class: 'ff-rabbit' }, spot)
   el('ellipse', { cx: 0, cy: -4, rx: 7, ry: 5, fill: 'var(--ff-fur)' }, g)
   el('circle', { cx: 6, cy: -8, r: 3.4, fill: 'var(--ff-fur)' }, g)
-  el('ellipse', { cx: 5, cy: -13.5, rx: 1.3, ry: 3.6, fill: 'var(--ff-fur)' }, g)
-  el('ellipse', { cx: 8, cy: -13, rx: 1.3, ry: 3.6, fill: 'var(--ff-fur)' }, g)
+  el('ellipse', { cx: 5, cy: -13.5, rx: 1.3, ry: 3.6, fill: 'var(--ff-fur)', class: 'ff-rabbit-ear' }, g)
+  el('ellipse', { cx: 8, cy: -13, rx: 1.3, ry: 3.6, fill: 'var(--ff-fur)', class: 'ff-rabbit-ear ff-rabbit-ear-b' }, g)
   el('circle', { cx: -6.5, cy: -3, r: 1.8, fill: '#fff', opacity: '.8' }, g)
 }
 
@@ -606,4 +618,30 @@ const ECO_CSS = `
 .ff-dormant .ff-sway [style]{opacity:.7}
 .ff-dormant .ff-sway,.ff-wilting .ff-sway{animation:none}
 .ff-critter{pointer-events:none}
+.ff-bird,.ff-bird-head,.ff-bird-tail,.ff-bird-wing,.ff-rabbit,.ff-rabbit-ear{transform-box:fill-box; animation-play-state:paused}
+.ff-live .ff-bird,.ff-live .ff-bird-head,.ff-live .ff-bird-tail,.ff-live .ff-bird-wing,.ff-live .ff-rabbit,.ff-live .ff-rabbit-ear{animation-play-state:running}
+.ff-bird{transform-origin:50% 100%; animation:ff-bird-bob 4.3s ease-in-out infinite}
+@keyframes ff-bird-bob{0%,64%,80%,100%{transform:translateY(0)} 68%{transform:translateY(-1.6px)} 72%{transform:translateY(0)} 76%{transform:translateY(-1px)}}
+.ff-bird-head{transform-origin:0% 100%; animation:ff-bird-peck 5.3s ease-in-out infinite}
+@keyframes ff-bird-peck{0%,24%,40%,100%{transform:rotate(0)} 28%{transform:rotate(24deg)} 32%{transform:rotate(2deg)} 36%{transform:rotate(20deg)}}
+.ff-bird-tail{transform-origin:100% 50%; animation:ff-bird-tail 6.1s ease-in-out infinite; animation-delay:-2.2s}
+@keyframes ff-bird-tail{0%,50%,62%,100%{transform:rotate(0)} 54%{transform:rotate(-26deg)} 58%{transform:rotate(6deg)}}
+.ff-bird-wing{transform-origin:50% 0%; animation:ff-bird-wing 7.9s ease-in-out infinite; animation-delay:-4s}
+@keyframes ff-bird-wing{0%,70%,84%,100%{transform:rotate(0)} 74%{transform:rotate(-38deg)} 78%{transform:rotate(-6deg)} 81%{transform:rotate(-30deg)}}
+.ff-rabbit{transform-origin:50% 100%; animation:ff-rabbit-hop 13s ease-in-out infinite}
+@keyframes ff-rabbit-hop{
+  0%,52%{transform:translate(0,0) scaleX(1)}
+  55%{transform:translate(6px,-7px) scaleX(1)} 58%{transform:translate(12px,0) scaleX(1)}
+  61%{transform:translate(18px,-7px) scaleX(1)} 64%{transform:translate(24px,0) scaleX(1)}
+  72%{transform:translate(24px,0) scaleX(1)} 74%{transform:translate(24px,0) scaleX(-1)}
+  77%{transform:translate(18px,-7px) scaleX(-1)} 80%{transform:translate(12px,0) scaleX(-1)}
+  83%{transform:translate(6px,-7px) scaleX(-1)} 86%{transform:translate(0,0) scaleX(-1)}
+  94%{transform:translate(0,0) scaleX(-1)} 96%,100%{transform:translate(0,0) scaleX(1)}
+}
+.ff-rabbit-ear{transform-origin:50% 100%; animation:ff-rabbit-ear 4.7s ease-in-out infinite}
+.ff-rabbit-ear-b{animation-duration:6.1s; animation-delay:-2.3s}
+@keyframes ff-rabbit-ear{0%,40%,52%,100%{transform:rotate(0)} 44%{transform:rotate(-14deg)} 48%{transform:rotate(8deg)}}
+@media (prefers-reduced-motion: reduce){
+  .ff-bird,.ff-bird-head,.ff-bird-tail,.ff-bird-wing,.ff-rabbit,.ff-rabbit-ear{animation:none}
+}
 `
