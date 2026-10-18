@@ -550,7 +550,9 @@ function renderEcosystem(svg, tip, life, uid, seedOff, api) {
 
   layer.sort((a, b) => a.y - b.y).forEach(({ node }) => svg.insertBefore(node, fgBand))
   const critters = el('g', {}, svg)
-  const critterStory = (f, byTxt) => ({ kind: 'critter', title: f.name, lines: [`Came at ${f.what}${byTxt}.`, f.id === 'bird' ? 'It stays as long as the tree is green. Shake the tree and it takes off — and comes back.' : 'It lives under the bench side of the clearing and bolts when the tree shakes.'] })
+  const critterStory = (f, byTxt) => ({ kind: 'critter', title: f.name, lines: [`Came at ${f.what}${byTxt}.`, f.id === 'bird'
+    ? `It stays as long as the tree stands${life.state === 'dormant' ? ', even while it rests' : ''}; only a withered tree loses it. Shake the tree and it takes off — and comes back.`
+    : 'It keeps to the grass in front of the tree, just right of the trunk, and bolts when the tree shakes.'] })
   if (earned.some((f) => f.id === 'bird') && life.state !== 'dead') {
     // On the canopy, where this tree says its top is; the belly sits on it.
     const perch = tree.perch || { x: 14 * sc, y: -52 * sc }
