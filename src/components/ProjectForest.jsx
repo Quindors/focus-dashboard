@@ -29,7 +29,14 @@ const endT = (s) => parseTs(s.ended_at || s.started_at).getTime()
 // leaving the frame: 80 hours is full size.
 function treeScale(life) {
   if (life.state === 'seedling') return 0.42 + Math.min(0.2, life.hours * 0.04)
-  return 0.9 + 1.2 * Math.min(1, Math.log1p(life.hours) / Math.log1p(80))
+  return 0.9 + 0.6 * treeGrowth(life)
+}
+// How grown the tree is, 0..1 on the same hours curve: drawTree spends it
+// mostly on height and side limbs, so a kept project stands tall rather
+// than merely swollen.
+function treeGrowth(life) {
+  if (life.state === 'seedling') return 0
+  return Math.min(1, Math.log1p(life.hours) / Math.log1p(80))
 }
 
 // Health, as colour: fresh foliage from the recent waterings' ALIGN; fading
@@ -265,7 +272,7 @@ function renderEcosystem(svg, tip, life, uid, seedOff, onPick) {
   })
   const tree = life.state === 'dead'
     ? drawSnag(Math.max(sc, 0.9), seedOff + 99)
-    : drawTree(sp.kind, treeFill(sp.kind, life), sc, uid, seedOff + 99)
+    : drawTree(sp.kind, treeFill(sp.kind, life), sc, uid, seedOff + 99, treeGrowth(life))
   center.appendChild(tree)
   attachTip(center, svg, tip, () => {
     const n = life.lifeWaterings.length
@@ -290,7 +297,7 @@ function renderEcosystem(svg, tip, life, uid, seedOff, onPick) {
   // behind the whole canopy, which hides a plant anywhere under its width.
   // In front of the trunk a plant only needs to clear the base.
   const treeRoom = (x, y, r) => (y <= 480
-    ? Math.abs(x - 500) - (24 * sc + r)
+    ? Math.abs(x - 500) - (34 * sc + r)
     : Math.hypot(x - 500, (y - 476) * 2) - (12 * sc + r))
   const roomAt = (x, y, r) => {
     let gap = treeRoom(x, y, r)

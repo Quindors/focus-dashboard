@@ -217,7 +217,7 @@ export function tinyPine(parent, x, y, s) {
   el('polygon', { points: pts([[-11, -24], [11, -24], [0, -62]], s), fill: 'var(--ff-treeline)' }, g)
 }
 
-export function drawTree(kind, fill, sc, uid, seed = 0) {
+export function drawTree(kind, fill, sc, uid, seed = 0, growth = 0) {
   const g = el('g', { class: 'ff-grow' })
   // Per-tree variation, all seeded so it never reshuffles: a nudged hue, a
   // taller or squatter trunk, a slight lean, lobes that wander — no two trees
@@ -233,17 +233,23 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
   const lit = `fill:color-mix(in oklab, ${base} 76%, white)`
   const th = v(3, 0.18)
   const L = (j(4) - 0.5) * 4
-  // Round canopies sit a little higher than the trunk's nominal top, so the
-  // trunk is seen forking into branches below the foliage instead of
-  // disappearing straight into it.
-  const lift = (kind === 'pine' || kind === 'cypress' || kind === 'other') ? 0 : 7
+  // Growth (0..1, the project forest's hours curve) is mostly upward: a
+  // grown tree stands on a taller trunk with the canopy carried higher, and
+  // puts out side limbs with tufts of their own — up to four, alternating
+  // sides — instead of simply swelling. Round canopies sit a little above
+  // the trunk's nominal top even ungrown, so the trunk is seen forking into
+  // branches below the foliage instead of disappearing straight into it.
+  const G = Math.max(0, Math.min(1, growth))
+  const lift = (kind === 'pine' || kind === 'cypress' || kind === 'other') ? 0 : 7 + 34 * G
+  const py = 1 + 0.7 * G   // vertical stretch for the conical and columnar kinds
+  const limbs = Math.round(G * 4)
   if (uid) el('ellipse', { cx: 2 * sc, cy: 1, rx: 18 * sc, ry: 4 * sc, fill: '#000', opacity: 'var(--ff-shad-o)', filter: `url(#soft${uid})` }, g)
   const sway = el('g', { class: 'ff-sway' }, g)
   sway.style.animationDuration = (6 + jitter(seed + 5) * 4).toFixed(2) + 's'
   sway.style.animationDelay = (-jitter(seed + 9) * 8).toFixed(2) + 's'
   // No filter on the tree itself: sway must stay a pure composited transform.
   const inner = el('g', {}, sway)
-  const trunkH = (kind === 'other' ? 34 : 19) * th
+  const trunkH = (kind === 'other' ? 34 * (1 + 0.8 * G) : 19 * py) * th
   // The trunk runs up to the heart of the lowest lobe, not just to where the
   // canopy nominally starts: the lobes wander and shrink with the seed, and
   // a trunk that stopped at the nominal line was left floating under a gap
@@ -288,9 +294,9 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
     // Four tiers with notched skirts, each over a darker tier behind it,
     // and short bare stubs where the trunk shows between them.
     const tier = (t, style, dy, grow) => {
-      const y0 = -(12 + 14 * t) * h + dy
+      const y0 = -(12 + 14 * t) * h * py + dy
       const hw = (22 - 4.2 * t) * w * grow
-      const apex = y0 - 27 * h * grow
+      const apex = y0 - 27 * h * py * grow
       const Lt = L * (1 + 0.3 * t)
       el('polygon', {
         points: pts([[-hw, y0], [-hw * 0.62, y0 - 3.5], [-hw * 0.28, y0 + 1.2], [Lt * 0.3, y0 - 2.5],
@@ -300,33 +306,33 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
     }
     for (let t = 0; t < 4; t++) tier(t, deep, 3, 1.08)
     for (let t = 1; t < 3; t++) {
-      const y0 = -(12 + 14 * t) * h
+      const y0 = -(12 + 14 * t) * h * py
       branch(L * 0.3, y0 + 2, -6 - j(30 + t) * 4, y0 + 5, 1.4)
       branch(L * 0.3, y0 + 1, 5 + j(34 + t) * 4, y0 + 4.5, 1.2)
     }
     for (let t = 0; t < 4; t++) tier(t, st, 0, 1)
     // sunlit left face of the lower tiers
-    el('polygon', { points: pts([[-(22 * w) * 0.9, -12 * h], [L * 0.3, -12 * h], [L, -39 * h]], sc), ...hi }, inner)
-    el('polygon', { points: pts([[(22 - 4.2) * w * 0.85, -26 * h], [L * 1.3 * 0.3, -26 * h], [L * 1.3, -53 * h]], sc), ...lo }, inner)
-    const hw1 = (22 - 4.2) * w, y1 = -26 * h, apex1 = y1 - 27 * h
+    el('polygon', { points: pts([[-(22 * w) * 0.9, -12 * h * py], [L * 0.3, -12 * h * py], [L, -39 * h * py]], sc), ...hi }, inner)
+    el('polygon', { points: pts([[(22 - 4.2) * w * 0.85, -26 * h * py], [L * 1.3 * 0.3, -26 * h * py], [L * 1.3, -53 * h * py]], sc), ...lo }, inner)
+    const hw1 = (22 - 4.2) * w, y1 = -26 * h * py, apex1 = y1 - 27 * h * py
     perch = [hw1 + (L * 1.3 - hw1) * 0.42, y1 + (apex1 - y1) * 0.42]
   } else if (kind === 'cypress') {
     const w = v(5, 0.14), h = v(6, 0.12)
-    oval(L + 1.5, -33 * h, 11.5 * w, 27 * h, { style: deep })
-    branch(L * 0.5, -14, L - 9, -22 * h, 1.3)
-    branch(L * 0.5, -22, L + 9, -34 * h, 1.2)
-    oval(L, -34 * h, 10 * w, 26 * h, { style: st })
-    oval(L * 1.4, -56 * h, 5.5 * w, 12 * h, { style: st })
+    oval(L + 1.5, -33 * h * py, 11.5 * w, 27 * h * py, { style: deep })
+    branch(L * 0.5, -14, L - 9, -22 * h * py, 1.3)
+    branch(L * 0.5, -22, L + 9, -34 * h * py, 1.2)
+    oval(L, -34 * h * py, 10 * w, 26 * h * py, { style: st })
+    oval(L * 1.4, -56 * h * py, 5.5 * w, 12 * h * py, { style: st })
     // fronds: short tufts that break the smooth spindle outline
     for (let i = 0; i < 5; i++) {
       const side = i % 2 ? 1 : -1
-      const y = -(14 + i * 9) * h
-      const r = 10 * w * Math.sqrt(Math.max(0, 1 - ((y + 34 * h) / (26 * h)) ** 2))
+      const y = -(14 + i * 9) * h * py
+      const r = 10 * w * Math.sqrt(Math.max(0, 1 - ((y + 34 * h * py) / (26 * h * py)) ** 2))
       oval(L + side * (r + 1), y, 4.2, 2.4, { style: st, transform: `rotate(${side * (-28 + j(40 + i) * 16)} ${((L + side * (r + 1)) * sc).toFixed(1)} ${(y * sc).toFixed(1)})` })
     }
-    oval(L - 3, -42 * h, 3.6, 13 * h, { style: lit })
-    oval(L + 4, -26 * h, 3.8, 12 * h, lo)
-    perch = [L + 4, -34 * h - 26 * h * Math.sqrt(Math.max(0, 1 - (4 / (10 * w)) ** 2))]
+    oval(L - 3, -42 * h * py, 3.6, 13 * h * py, { style: lit })
+    oval(L + 4, -26 * h * py, 3.8, 12 * h * py, lo)
+    perch = [L + 4, -34 * h * py - 26 * h * py * Math.sqrt(Math.max(0, 1 - (4 / (10 * w)) ** 2))]
   } else if (kind === 'other') {
     // Birch: a tall pale trunk with bark marks and a small, high, airy crown
     // — nothing like the broad round canopies, so an uncategorized session
@@ -406,6 +412,26 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
     lobe(L - 3, -41 * th, 3.5, { style: lit })
     lobe(L - 6, -33 * th, 6, hi)
     lobe(L + 9, -23 * th, 6, lo)
+  }
+  // Side limbs, earned with growth: a bare branch out of the trunk below
+  // the canopy, a tuft of foliage at its tip. The cypress stays a column.
+  // branch() and lobe() subtract the canopy lift; limbs sit on the trunk
+  // itself, so it is added back.
+  if (kind !== 'cypress') {
+    for (let i = 0; i < limbs; i++) {
+      const side = i % 2 ? 1 : -1
+      const y0 = kind === 'pine' ? -(12 + 14 * (i + 1)) * v(6, 0.1) * py + 3
+        : kind === 'other' ? -trunkH * (0.38 + 0.13 * i)
+        : -(15 + 9 * i)
+      const len = kind === 'pine'
+        ? (22 - 4.2 * (i + 1)) * v(5, 0.12) + 5 + 6 * G
+        : (10 + 9 * G + i * 2) * v(90 + i, 0.2)
+      const x1 = L * 0.4 + side * len, y1 = y0 - len * 0.35
+      branch(L * 0.4, y0, x1, y1 + lift, 1.6)
+      lobe(x1, y1 + lift, 4.2, { style: st })
+      lobe(x1 + side * 3, y1 + lift - 2, 3.2, { style: st })
+      lobe(x1 - side, y1 + lift - 3, 2, { style: lit })
+    }
   }
   addHalo(inner, 2)
   g.perch = { x: perch[0] * sc, y: (perch[1] - lift) * sc }
