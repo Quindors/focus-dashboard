@@ -112,14 +112,16 @@ function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, 
   })
   entries.sort((a, b) => a.y - b.y)
 
-  // The near grass band goes in first so trees can be inserted before it —
-  // a hovered tree is lifted above its neighbours without covering the band.
+  // The near grass band goes in first so trees are inserted before it, back
+  // to front. Nothing re-orders them afterwards: a hover used to lift the
+  // tree to the front and drop it back on leave, and moving a node under
+  // the pointer is exactly how the browser loses the leave event — the
+  // card stayed up and the tree stayed in front. The halos keep two
+  // overlapping trees readable without any of that.
   const fgBand = el('ellipse', { cx: 500, cy: 600, rx: 860, ry: 110, fill: 'var(--ff-fg-band)', opacity: '.85', filter: `url(#rough${uid})` }, svg)
-  const restoreDepth = (node) => {
-    const y = Number(node.dataset.y)
-    const after = [...svg.querySelectorAll('.ff-tree')].find((n) => n !== node && Number(n.dataset.y) > y)
-    svg.insertBefore(node, after || fgBand)
-  }
+  // Belt and braces for the card: whatever happens to a tree's own leave
+  // event, leaving the grove hides it.
+  svg.addEventListener('pointerleave', () => { tip.style.display = 'none' })
   // The card hangs off the pointer — bottom edge just above it, centred —
   // instead of a fixed offset from the tree's base.
   const placeTip = (ev) => {
@@ -157,10 +159,7 @@ function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, 
     parts.push({ dy: 0, node: drawTree(sp.kind, fill, sc, uid, gi + seedOff) })
     parts.sort((a, b) => a.dy - b.dy)
     parts.forEach((part) => t.appendChild(part.node))
-    // Hover lifts the tree above its neighbours and outlines it, so two trees
-    // that overlap still read as two; the card follows the pointer.
-    const lift = () => { t.classList.add('ff-hot'); svg.insertBefore(t, fgBand) }
-    const drop = () => { t.classList.remove('ff-hot'); restoreDepth(t) }
+    // The card follows the pointer.
     const show = (ev) => {
       fillTip(tip, s, sp.kind, extra)
       tip.style.display = 'block'
@@ -174,11 +173,11 @@ function renderGroveSvg(svg, tip, sessions, uid, seedOff, earnedHere, groveKey, 
       }
     }
     const hide = () => { tip.style.display = 'none' }
-    t.addEventListener('pointerenter', (ev) => { lift(); show(ev) })
+    t.addEventListener('pointerenter', show)
     t.addEventListener('pointermove', placeTip)
-    t.addEventListener('focus', () => { lift(); show() })
-    t.addEventListener('pointerleave', () => { drop(); hide() })
-    t.addEventListener('blur', () => { drop(); hide() })
+    t.addEventListener('focus', () => show())
+    t.addEventListener('pointerleave', hide)
+    t.addEventListener('blur', hide)
     t.addEventListener('click', () => { if (onPick) onPick(s) })
     t.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && onPick) onPick(s) })
     const grows = t.querySelectorAll('.ff-grow')

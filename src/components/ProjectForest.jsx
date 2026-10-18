@@ -283,11 +283,17 @@ function renderEcosystem(svg, tip, life, uid, seedOff, onPick) {
   // pond, a bush on the bench) or on another plant: each one tries up to
   // thirty spots — the same ring at other angles, then wider rings — and
   // keeps the first with daylight around it, or failing that the roomiest.
-  const obstacles = [{ x: 500, y: 476, r: 26 * sc }]
+  const obstacles = []
   earned.filter((f) => f.spot).forEach((f) => obstacles.push({ x: f.spot[0], y: f.spot[1], r: f.spot[2] }))
   const placed = []
+  // The tree is not a circle on the ground: anything standing behind it is
+  // behind the whole canopy, which hides a plant anywhere under its width.
+  // In front of the trunk a plant only needs to clear the base.
+  const treeRoom = (x, y, r) => (y <= 480
+    ? Math.abs(x - 500) - (24 * sc + r)
+    : Math.hypot(x - 500, (y - 476) * 2) - (12 * sc + r))
   const roomAt = (x, y, r) => {
-    let gap = Infinity
+    let gap = treeRoom(x, y, r)
     for (const o of obstacles) gap = Math.min(gap, Math.hypot(o.x - x, (o.y - y) * 2) - (o.r + r))
     for (const q of placed) gap = Math.min(gap, Math.hypot(q.x - x, (q.y - y) * 1.6) - (q.r + r))
     return gap
