@@ -223,10 +223,20 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
   // taller or squatter trunk, a slight lean, lobes that wander — no two trees
   // are the same graphic even within a species.
   const v = (k, amt) => 1 + (jitter(seed * 13 + k) - 0.5) * 2 * amt
-  const tint = jitter(seed * 13 + 1) > 0.5 ? 'white' : 'black'
-  const st = `fill:color-mix(in oklab, ${fill} ${Math.round(90 + jitter(seed * 13 + 2) * 10)}%, ${tint})`
+  const j = (k) => jitter(seed * 13 + k)
+  const tint = j(1) > 0.5 ? 'white' : 'black'
+  const base = `color-mix(in oklab, ${fill} ${Math.round(90 + j(2) * 10)}%, ${tint})`
+  // Three tones make a canopy read as a volume instead of a flat blob: the
+  // shaded back mass, the body, and the sunlit top.
+  const st = `fill:${base}`
+  const deep = `fill:color-mix(in oklab, ${base} 70%, black)`
+  const lit = `fill:color-mix(in oklab, ${base} 76%, white)`
   const th = v(3, 0.18)
-  const L = (jitter(seed * 13 + 4) - 0.5) * 4
+  const L = (j(4) - 0.5) * 4
+  // Round canopies sit a little higher than the trunk's nominal top, so the
+  // trunk is seen forking into branches below the foliage instead of
+  // disappearing straight into it.
+  const lift = (kind === 'pine' || kind === 'cypress' || kind === 'other') ? 0 : 7
   if (uid) el('ellipse', { cx: 2 * sc, cy: 1, rx: 18 * sc, ry: 4 * sc, fill: '#000', opacity: 'var(--ff-shad-o)', filter: `url(#soft${uid})` }, g)
   const sway = el('g', { class: 'ff-sway' }, g)
   sway.style.animationDuration = (6 + jitter(seed + 5) * 4).toFixed(2) + 's'
@@ -238,15 +248,34 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
   // canopy nominally starts: the lobes wander and shrink with the seed, and
   // a trunk that stopped at the nominal line was left floating under a gap
   // on the round canopies. Drawn first, so the foliage covers the extra.
-  const trunkTop = kind === 'leaf' ? 40 * th
-    : kind === 'maple' ? 46 * th
+  const trunkTop = kind === 'leaf' ? 40 * th + lift
+    : kind === 'maple' ? 46 * th + lift
     : (kind === 'pine' || kind === 'cypress' || kind === 'other') ? trunkH
-    : 27 * th
+    : 27 * th + lift
+  const wood = kind === 'other' ? 'var(--ff-stone)' : 'var(--ff-trunk)'
   el('polygon', {
     points: pts([[-3.6, 0], [3.6, 0], [2.4 + L, -trunkTop], [-2.4 + L, -trunkTop]], sc),
-    fill: kind === 'other' ? 'var(--ff-stone)' : 'var(--ff-trunk)',
+    fill: wood,
   }, inner)
-  const lobe = (cx, cy, r, extra) => el('circle', { cx: (cx * sc).toFixed(1), cy: (cy * sc).toFixed(1), r: (r * sc).toFixed(1), ...extra }, inner)
+  // Root flare: the trunk widens into the ground instead of ending in a stub.
+  el('polygon', { points: pts([[-7.5, 0.5], [-2.6, 0.5], [-2.9, -5]], sc), fill: wood }, inner)
+  el('polygon', { points: pts([[2.6, 0.5], [7.5, 0.5], [2.9, -5]], sc), fill: wood }, inner)
+  // Branches are drawn between the shaded back of the canopy and its body,
+  // so they show in the gaps between lobes and vanish behind the mass.
+  const branch = (x0, y0, x1, y1, w) => el('line', {
+    x1: (x0 * sc).toFixed(1), y1: (y0 * sc).toFixed(1), x2: (x1 * sc).toFixed(1), y2: ((y1 - lift) * sc).toFixed(1),
+    stroke: wood, 'stroke-width': (w * sc).toFixed(1), 'stroke-linecap': 'round',
+  }, inner)
+  const lobe = (cx, cy, r, extra) => el('circle', { cx: (cx * sc).toFixed(1), cy: ((cy - lift) * sc).toFixed(1), r: (r * sc).toFixed(1), ...extra }, inner)
+  const oval = (cx, cy, rx, ry, extra) => el('ellipse', { cx: (cx * sc).toFixed(1), cy: ((cy - lift) * sc).toFixed(1), rx: (rx * sc).toFixed(1), ry: (ry * sc).toFixed(1), ...extra }, inner)
+  // Small leaf clusters scattered along the silhouette, so the edge of the
+  // canopy is ragged like foliage rather than a clean geometric curve.
+  const fringe = (cx, cy, rx, ry, n, k0) => {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + j(k0 + i) * 0.8
+      lobe(cx + Math.cos(a) * rx, cy + Math.sin(a) * ry, 2.4 + j(k0 + 20 + i) * 1.8, { style: st })
+    }
+  }
   const hi = { fill: '#fff', opacity: 'var(--ff-hi-o)' }
   const lo = { fill: '#000', opacity: 'var(--ff-lo-o)' }
   // Where a bird can stand: a point on the canopy's upper surface, a little
@@ -256,58 +285,130 @@ export function drawTree(kind, fill, sc, uid, seed = 0) {
   let perch
   if (kind === 'pine') {
     const w = v(5, 0.12), h = v(6, 0.1)
-    // on the right slope of the middle tier, part-way up
-    perch = [16 * w + (L * 1.3 - 16 * w) * 0.4, -29 * h - 29 * h * 0.4]
-    el('polygon', { points: pts([[-20 * w, -10 * h], [20 * w, -10 * h], [L, -44 * h]], sc), style: st }, inner)
-    el('polygon', { points: pts([[-16 * w, -29 * h], [16 * w, -29 * h], [L * 1.3, -58 * h]], sc), style: st }, inner)
-    el('polygon', { points: pts([[-10 * w, -46 * h], [10 * w, -46 * h], [L * 1.6, -71 * h]], sc), style: st }, inner)
-    el('polygon', { points: pts([[-16 * w, -29 * h], [L * 1.3, -29 * h], [L * 1.3, -58 * h]], sc), ...hi }, inner)
+    // Four tiers with notched skirts, each over a darker tier behind it,
+    // and short bare stubs where the trunk shows between them.
+    const tier = (t, style, dy, grow) => {
+      const y0 = -(12 + 14 * t) * h + dy
+      const hw = (22 - 4.2 * t) * w * grow
+      const apex = y0 - 27 * h * grow
+      const Lt = L * (1 + 0.3 * t)
+      el('polygon', {
+        points: pts([[-hw, y0], [-hw * 0.62, y0 - 3.5], [-hw * 0.28, y0 + 1.2], [Lt * 0.3, y0 - 2.5],
+          [hw * 0.28, y0 + 1.2], [hw * 0.62, y0 - 3.5], [hw, y0], [Lt, apex]], sc),
+        style,
+      }, inner)
+    }
+    for (let t = 0; t < 4; t++) tier(t, deep, 3, 1.08)
+    for (let t = 1; t < 3; t++) {
+      const y0 = -(12 + 14 * t) * h
+      branch(L * 0.3, y0 + 2, -6 - j(30 + t) * 4, y0 + 5, 1.4)
+      branch(L * 0.3, y0 + 1, 5 + j(34 + t) * 4, y0 + 4.5, 1.2)
+    }
+    for (let t = 0; t < 4; t++) tier(t, st, 0, 1)
+    // sunlit left face of the lower tiers
+    el('polygon', { points: pts([[-(22 * w) * 0.9, -12 * h], [L * 0.3, -12 * h], [L, -39 * h]], sc), ...hi }, inner)
+    el('polygon', { points: pts([[(22 - 4.2) * w * 0.85, -26 * h], [L * 1.3 * 0.3, -26 * h], [L * 1.3, -53 * h]], sc), ...lo }, inner)
+    const hw1 = (22 - 4.2) * w, y1 = -26 * h, apex1 = y1 - 27 * h
+    perch = [hw1 + (L * 1.3 - hw1) * 0.42, y1 + (apex1 - y1) * 0.42]
   } else if (kind === 'cypress') {
     const w = v(5, 0.14), h = v(6, 0.12)
+    oval(L + 1.5, -33 * h, 11.5 * w, 27 * h, { style: deep })
+    branch(L * 0.5, -14, L - 9, -22 * h, 1.3)
+    branch(L * 0.5, -22, L + 9, -34 * h, 1.2)
+    oval(L, -34 * h, 10 * w, 26 * h, { style: st })
+    oval(L * 1.4, -56 * h, 5.5 * w, 12 * h, { style: st })
+    // fronds: short tufts that break the smooth spindle outline
+    for (let i = 0; i < 5; i++) {
+      const side = i % 2 ? 1 : -1
+      const y = -(14 + i * 9) * h
+      const r = 10 * w * Math.sqrt(Math.max(0, 1 - ((y + 34 * h) / (26 * h)) ** 2))
+      oval(L + side * (r + 1), y, 4.2, 2.4, { style: st, transform: `rotate(${side * (-28 + j(40 + i) * 16)} ${((L + side * (r + 1)) * sc).toFixed(1)} ${(y * sc).toFixed(1)})` })
+    }
+    oval(L - 3, -42 * h, 3.6, 13 * h, { style: lit })
+    oval(L + 4, -26 * h, 3.8, 12 * h, lo)
     perch = [L + 4, -34 * h - 26 * h * Math.sqrt(Math.max(0, 1 - (4 / (10 * w)) ** 2))]
-    el('ellipse', { cx: L * sc, cy: -34 * h * sc, rx: 10 * w * sc, ry: 26 * h * sc, style: st }, inner)
-    el('ellipse', { cx: L * 1.4 * sc, cy: -56 * h * sc, rx: 5.5 * w * sc, ry: 12 * h * sc, style: st }, inner)
-    el('ellipse', { cx: (L - 3) * sc, cy: -42 * h * sc, rx: 4 * sc, ry: 14 * h * sc, ...hi }, inner)
-    el('ellipse', { cx: (L + 4) * sc, cy: -26 * h * sc, rx: 4 * sc, ry: 12 * h * sc, ...lo }, inner)
   } else if (kind === 'other') {
-    // Birch: a tall pale trunk with a small, high, airy crown — nothing like
-    // the broad round canopies, so an uncategorized session reads at a glance.
+    // Birch: a tall pale trunk with bark marks and a small, high, airy crown
+    // — nothing like the broad round canopies, so an uncategorized session
+    // reads at a glance.
     const top = -trunkH
+    for (let i = 0; i < 4; i++) {
+      const y = -(6 + i * 7.5 + j(50 + i) * 3) * th
+      const x = L * (1 - y / top) * 0.6
+      el('rect', { x: ((x - 2.6 + (i % 2) * 1.4) * sc).toFixed(1), y: (y * sc).toFixed(1), width: (2.6 * sc).toFixed(1), height: (1.3 * sc).toFixed(1), fill: 'var(--ff-trunk)', opacity: '.7' }, inner)
+    }
+    branch(L * 0.6, top + 10, L - 10, top - 2, 1.5)
+    branch(L * 0.8, top + 4, L + 10, top - 5, 1.3)
     perch = [L + 2, top - 6 * v(7, 0.2) - 9 * v(8, 0.15) + 1.5]
+    lobe(L - 1, top - 4 * v(7, 0.2), 10 * v(8, 0.15), { style: deep })
+    lobe(L - 10, top - 2, 5, { style: deep })
+    lobe(L + 10, top - 5, 4.5, { style: deep })
     lobe(L, top - 6 * v(7, 0.2), 9 * v(8, 0.15), { style: st })
     lobe(L - 7 * v(9, 0.3), top + 2, 6.5 * v(10, 0.2), { style: st })
     lobe(L + 7 * v(11, 0.3), top - 1, 6 * v(12, 0.2), { style: st })
+    lobe(L - 11, top - 3, 3.5, { style: st })
+    lobe(L + 11, top - 7, 3.2, { style: st })
+    lobe(L + 3, top - 12, 4, { style: lit })
     lobe(L - 2, top - 9, 3.5, hi)
   } else if (kind === 'leaf') {
     const w = v(5, 0.12)
     perch = [L + 6, -40 * th - Math.sqrt(Math.max(0, (23 * w) ** 2 - 36))]
+    lobe(L - 10, -32 * th, 15 * w, { style: deep })
+    lobe(L + 12, -31 * th, 14 * w, { style: deep })
+    lobe(L + 1, -46 * th, 15 * w, { style: deep })
+    branch(L * 0.5, -trunkTop * 0.22, L - 15, -34 * th, 2.2)
+    branch(L * 0.5, -trunkTop * 0.28, L + 14, -38 * th, 1.8)
+    branch(L * 0.8, -trunkTop * 0.34, L + 2, -54 * th, 1.6)
     lobe(L, -40 * th, 23 * w, { style: st })
     lobe(L - 13 * v(7, 0.25), -29 * th, 13 * v(8, 0.2), { style: st })
     lobe(L + 13 * v(9, 0.25), -29 * th, 13 * v(10, 0.2), { style: st })
-    if (jitter(seed * 13 + 11) > 0.45) lobe(L + (jitter(seed * 13 + 12) - 0.5) * 20, -52 * th, 8 * v(13, 0.3), { style: st })
+    if (j(11) > 0.45) lobe(L + (j(12) - 0.5) * 20, -52 * th, 8 * v(13, 0.3), { style: st })
+    fringe(L, -40 * th, 23 * w, 20 * w, 7, 60)
+    lobe(L + 7, -51 * th, 7.5, { style: lit })
+    lobe(L - 5, -56 * th, 4.5, { style: lit })
     lobe(L - 8, -47 * th, 10, hi)
     lobe(L + 10, -30 * th, 9, lo)
   } else if (kind === 'maple') {
     const w = v(5, 0.15)
     perch = [L + 5, -46 * th - Math.sqrt(Math.max(0, (17 * v(9, 0.12)) ** 2 - 25))]
+    lobe(L - 12, -27 * th, 15 * w, { style: deep })
+    lobe(L + 12, -27 * th, 15 * w, { style: deep })
+    lobe(L, -42 * th, 17, { style: deep })
+    branch(L * 0.5, -trunkTop * 0.2, L - 16, -32 * th, 2.2)
+    branch(L * 0.5, -trunkTop * 0.26, L + 15, -34 * th, 1.9)
+    branch(L * 0.8, -trunkTop * 0.34, L - 3, -56 * th, 1.5)
     lobe(L - 13 * v(7, 0.25), -31 * th, 14 * w, { style: st })
     lobe(L + 13 * v(8, 0.25), -31 * th, 14 * w, { style: st })
     lobe(L, -46 * th, 17 * v(9, 0.12), { style: st })
-    if (jitter(seed * 13 + 10) > 0.5) lobe(L + (jitter(seed * 13 + 11) - 0.5) * 24, -40 * th, 9, { style: st })
+    if (j(10) > 0.5) lobe(L + (j(11) - 0.5) * 24, -40 * th, 9, { style: st })
+    lobe(L - 20, -22 * th, 6, { style: st })
+    lobe(L + 21, -24 * th, 5.5, { style: st })
+    fringe(L, -38 * th, 24 * w, 18, 6, 70)
+    lobe(L + 6, -54 * th, 7, { style: lit })
+    lobe(L - 9, -47 * th, 5, { style: lit })
     lobe(L - 6, -50 * th, 8, hi)
     lobe(L + 11, -29 * th, 8, lo)
   } else {
     const w = v(5, 0.15)
     perch = [L + 6, -27 * th - 15 * v(6, 0.15) * Math.sqrt(Math.max(0, 1 - (6 / (20 * w)) ** 2))]
-    el('ellipse', { cx: L * sc, cy: -27 * th * sc, rx: 20 * w * sc, ry: 15 * v(6, 0.15) * sc, style: st }, inner)
+    oval(L + 1, -24 * th, 21 * w, 14 * v(6, 0.15), { style: deep })
+    lobe(L - 12, -33 * th, 8, { style: deep })
+    lobe(L + 12, -31 * th, 7.5, { style: deep })
+    branch(L * 0.5, -trunkTop * 0.22, L - 13, -32 * th, 2)
+    branch(L * 0.5, -trunkTop * 0.28, L + 12, -33 * th, 1.7)
+    branch(L * 0.8, -trunkTop * 0.34, L + 1, -42 * th, 1.4)
+    oval(L, -27 * th, 20 * w, 15 * v(6, 0.15), { style: st })
     lobe(L - 11 * v(7, 0.3), -36 * th, 7 * v(8, 0.25), { style: st })
     lobe(L + 11 * v(9, 0.3), -33 * th, 6 * v(10, 0.25), { style: st })
-    if (jitter(seed * 13 + 11) > 0.5) lobe(L + (jitter(seed * 13 + 12) - 0.5) * 16, -40 * th, 5, { style: st })
+    if (j(11) > 0.5) lobe(L + (j(12) - 0.5) * 16, -40 * th, 5, { style: st })
+    fringe(L, -27 * th, 20 * w, 14, 7, 80)
+    lobe(L + 6, -38 * th, 5.5, { style: lit })
+    lobe(L - 3, -41 * th, 3.5, { style: lit })
     lobe(L - 6, -33 * th, 6, hi)
     lobe(L + 9, -23 * th, 6, lo)
   }
-  addHalo(inner)
-  g.perch = { x: perch[0] * sc, y: perch[1] * sc }
+  addHalo(inner, 2)
+  g.perch = { x: perch[0] * sc, y: (perch[1] - lift) * sc }
   return g
 }
 
