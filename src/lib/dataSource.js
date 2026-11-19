@@ -210,6 +210,27 @@ export async function deleteProject(id) {
   return apiPost('/api/project/delete', { id })
 }
 
+// The paper stock each project buys with its productive hours
+// (monitor/stocks.py): { configured, keys, usd_per_hour, min_buy_usd, market,
+// problem, totals, projects: [{ project_id, symbol, shares, value_usd, ... }] }.
+// It lives on the monitor's machine only, with no cloud copy, and it is an
+// extra on the Projects tab, not what the tab is for — so anything short of
+// an answer (monitor off, or a monitor from before stocks) reads as null.
+export async function fetchStocks() {
+  if (!isLocal) return null
+  try {
+    return await apiGet('/api/stocks')
+  } catch {
+    return null
+  }
+}
+
+// symbol '' / null takes the ticker off; the shares already bought stay.
+// Answers { project } — that project's entry as fetchStocks lists it.
+export async function setProjectTicker(projectId, symbol) {
+  return apiPost('/api/stocks/ticker', { project_id: projectId, symbol: symbol || null })
+}
+
 // status: 'completed' | 'abandoned'. Completing a session rolls straight into
 // the post-session break; abandoning one doesn't.
 export async function endIntention(status) {

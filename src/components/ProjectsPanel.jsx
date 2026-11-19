@@ -7,7 +7,9 @@ import {
   fetchCategories,
   fetchProjects,
   fetchSessions,
+  fetchStocks,
   pickableCategory,
+  setProjectTicker,
   updateProject,
 } from '../lib/dataSource'
 
@@ -50,8 +52,143 @@ function fmtHours(mins) {
 const fmtDate = (s) =>
   parseTs(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 
+// A project can hold a stock: every productive hour worked in its sessions
+// buys a fixed dollar amount of one ticker in a PAPER account — pretend
+// money, real prices (monitor/stocks.py). It is a score that only grows by
+// working, so a gain is shown in green and a loss in the same quiet grey as
+// everything else: the market's bad day is not the user's.
+const fmtUsd = (n) => (n == null ? '—' : `$${Number(n).toFixed(2)}`)
+const fmtShares = (n) => Number(n).toFixed(n >= 1 ? 3 : 4)
+function Gain({ usd, pct }) {
+  if (usd == null) return null
+  const up = usd >= 0
+  return (
+    <span className={up ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}>
+      {up ? '+' : '−'}${Math.abs(usd).toFixed(2)}
+      {pct != null && ` (${up ? '+' : '−'}${Math.abs(pct).toFixed(1)}%)`}
+    </span>
+  )
+}
+
+function marketNote(market) {
+  if (!market) return null
+  return market.is_open ? 'Market open' : 'Market closed — buys queue for the next open'
+}
+
+// The whole paper portfolio in one line, above the table.
+function PortfolioStrip({ stocks }) {
+  if (!stocks || (!stocks.configured && !stocks.keys)) return null
+  const t = stocks.totals || {}
+  const anyTicker = (stocks.projects || []).some((p) => p.symbol || p.shares > 0 || p.queued_usd > 0)
+  return (
+    <div className="mb-5 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60" data-testid="portfolio">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Paper portfolio
+        </span>
+        {stocks.configured && anyTicker && (
+          <span className="text-sm text-slate-700 dark:text-slate-200 tabular-nums">
+            <span className="font-semibold">{fmtUsd(t.value_usd)}</span>
+            <span className="text-slate-400 dark:text-slate-500"> from {fmtUsd(t.invested_usd)} of focused hours </span>
+            <Gain usd={t.gain_usd} pct={t.invested_usd > 0 && t.gain_usd != null ? (100 * t.gain_usd) / t.invested_usd : null} />
+          </span>
+        )}
+        {stocks.configured && (
+          <span className="text-xs text-slate-400 dark:text-slate-500">{marketNote(stocks.market)}</span>
+        )}
+      </div>
+      {stocks.configured && (
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+          {anyTicker
+            ? `Each productive hour in a project's sessions buys $${stocks.usd_per_hour} of its stock, in pretend money at real prices (15 minutes delayed).`
+            : `Give a project a ticker below and each productive hour in its sessions buys $${stocks.usd_per_hour} of that stock — pretend money, real prices.`}
+        </p>
+      )}
+      {stocks.problem && (
+        <ErrorNote error={{ message: stocks.problem.error, fix: stocks.problem.fix }} className="mt-2" />
+      )}
+    </div>
+  )
+}
+
+// A project's ticker and what its hours have bought, on one line under the
+// description. The ticker saves on its own button, apart from the row's
+// Save: it is checked with the broker first.
+function StockLine({ project, stock, minBuy, onTicker }) {
+  const current = stock?.symbol || ''
+  const [ticker, setTicker] = useState(current)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const typed = ticker.trim().toUpperCase()
+  const changed = typed !== current
+
+  async function save() {
+    setBusy(true)
+    setError(null)
+    try {
+      await onTicker(project, typed)
+    } catch (e) {
+      setError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const holds = stock && (stock.shares > 0 || (stock.holdings || []).length > 0)
+  const quiet = 'text-slate-400 dark:text-slate-500'
+  return (
+    <div className="mt-1.5 text-xs" data-testid="stock">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className={`uppercase tracking-wide ${quiet}`}>Stock</span>
+        <input
+          value={ticker}
+          disabled={busy}
+          onChange={(e) => setTicker(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && changed) save() }}
+          placeholder="Ticker"
+          aria-label={`Stock ticker for ${project.name}`}
+          maxLength={10}
+          className={`${inputClass} !w-20 !text-xs uppercase placeholder:normal-case`}
+        />
+        {changed && (
+          <button
+            onClick={save}
+            disabled={busy}
+            className="px-2 py-1 rounded-md bg-emerald-500 text-white font-medium hover:bg-emerald-600 disabled:opacity-30 transition-colors"
+          >
+            {busy ? 'Checking…' : !typed ? 'Remove' : current ? 'Change' : 'Set'}
+          </button>
+        )}
+        {stock?.asset_name && (
+          <span className={`${quiet} truncate max-w-48`} title={stock.asset_name}>{stock.asset_name}</span>
+        )}
+        {holds && (
+          <span className="text-slate-600 dark:text-slate-300 tabular-nums" data-testid="holding">
+            {(stock.holdings || []).map((h) => `${fmtShares(h.shares)} ${h.symbol}`).join(' + ')}
+            {' · '}{fmtUsd(stock.value_usd)}{' '}
+            <Gain usd={stock.gain_usd} pct={stock.gain_pct} />
+          </span>
+        )}
+        {stock?.queued_usd > 0 && (
+          <span className={`${quiet} tabular-nums`}>{fmtUsd(stock.queued_usd)} queued for the open</span>
+        )}
+        {stock?.symbol && stock.owed_usd > 0 && !stock.problem && (
+          <span className={`${quiet} tabular-nums`}>{fmtUsd(stock.owed_usd)} earned, buys at {fmtUsd(minBuy)}</span>
+        )}
+        {stock?.symbol && !holds && !(stock.queued_usd > 0) && !(stock.owed_usd > 0) && (
+          <span className={quiet}>Buys with your next productive session here</span>
+        )}
+      </div>
+      {stock?.problem && (
+        <ErrorNote inline error={{ message: stock.problem.error, fix: stock.problem.fix }} className="block mt-1" />
+      )}
+      <ErrorNote inline error={error} className="block mt-1" />
+    </div>
+  )
+}
+
 // One editable project row. Save enables once something changed.
-function ProjectRow({ project, stats, cats, onSave, onArchive, onDelete, busy }) {
+function ProjectRow({ project, stats, cats, onSave, onArchive, onDelete, busy, stocksOn, stock, minBuy, onTicker }) {
   const [confirming, setConfirming] = useState(false)
   const [name, setName] = useState(project.name)
   const [description, setDescription] = useState(project.description || '')
@@ -79,6 +216,7 @@ function ProjectRow({ project, stats, cats, onSave, onArchive, onDelete, busy })
           className={inputClass}
           maxLength={500}
         />
+        {stocksOn && <StockLine project={project} stock={stock} minBuy={minBuy} onTicker={onTicker} />}
       </td>
       <td className="py-2 pr-3 align-top w-40">
         <CategorySelect value={category} onChange={setCategory} cats={cats} disabled={busy} />
@@ -194,12 +332,16 @@ export default function ProjectsPanel() {
   const [notice, setNotice] = useState(null)
   const [busyId, setBusyId] = useState(null) // project being saved, or 'new' for the add form
   const [showArchived, setShowArchived] = useState(false)
+  const [stocks, setStocks] = useState(null) // null: monitor off, or one from before stocks
 
   const load = useCallback(async () => {
     try {
-      const [p, s] = await Promise.all([fetchProjects(true), fetchSessions().catch(() => [])])
+      const [p, s, st] = await Promise.all([
+        fetchProjects(true), fetchSessions().catch(() => []), fetchStocks(),
+      ])
       setProjects(p)
       setSessions(s)
+      setStocks(st)
       setError(null)
     } catch (e) {
       setError(e)
@@ -207,6 +349,13 @@ export default function ProjectsPanel() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  // Prices move and buys land without anyone touching the page.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (!document.hidden) fetchStocks().then(setStocks)
+    }, 30000)
+    return () => clearInterval(t)
+  }, [])
   useEffect(() => {
     fetchCategories()
       .then((c) => setCats(c.filter(pickableCategory)))
@@ -258,6 +407,18 @@ export default function ProjectsPanel() {
     return r
   })
 
+  // Not through run(): a refused ticker belongs next to the box it was typed
+  // in, so the cell keeps the error and only a success reloads the tab.
+  const handleTicker = async (p, symbol) => {
+    await setProjectTicker(p.id, symbol)
+    setStocks(await fetchStocks())
+  }
+  const stocksOn = !!stocks?.configured
+  const stockById = useMemo(
+    () => new Map((stocks?.projects || []).map((s) => [s.project_id, s])),
+    [stocks],
+  )
+
   const active = (projects || []).filter((p) => p.status !== 'archived')
   const archived = (projects || []).filter((p) => p.status === 'archived')
 
@@ -276,7 +437,7 @@ export default function ProjectsPanel() {
         <tbody>
           {rows.map((p) => (
             <ProjectRow
-              key={`${p.id}:${p.name}:${p.description || ''}:${p.category || ''}:${p.status}`}
+              key={`${p.id}:${p.name}:${p.description || ''}:${p.category || ''}:${p.status}:${stockById.get(p.id)?.symbol || ''}`}
               project={p}
               stats={statsById.get(p.id) || NONE}
               cats={cats}
@@ -284,6 +445,10 @@ export default function ProjectsPanel() {
               onArchive={handleArchive}
               onDelete={handleDelete}
               busy={busyId === p.id}
+              stocksOn={stocksOn}
+              stock={stockById.get(p.id)}
+              minBuy={stocks?.min_buy_usd}
+              onTicker={handleTicker}
             />
           ))}
         </tbody>
@@ -306,6 +471,7 @@ export default function ProjectsPanel() {
 
       <AddProjectForm onAdd={handleAdd} cats={cats} busy={busyId === 'new'} />
 
+      <PortfolioStrip stocks={stocks} />
       <ErrorNote error={error} className="mb-3" />
       {notice && <p className="text-sm text-emerald-600 dark:text-emerald-400 mb-3">{notice}</p>}
       {projects === null && !error && <p className="text-slate-500 dark:text-slate-400 text-sm">Loading…</p>}
