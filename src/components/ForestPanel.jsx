@@ -6,7 +6,7 @@ import ProjectForest from './ProjectForest'
 import Mini from './MiniTree'
 import {
   FOREST_CSS, ambientSpans, defsFor, drawBackdrop, drawLandmark, drawTree,
-  durationMin, el, fmtDate, fmtMin, foliageFill, hillY, jitter, monthKey, monthLabel, parseTs,
+  durationMin, el, fmtDate, outcomeLabel, fmtMin, foliageFill, hillY, jitter, monthKey, monthLabel, parseTs,
   seasonClass, sessionCategory, speciesFor,
 } from '../lib/forestDraw'
 
@@ -47,7 +47,7 @@ function fillTip(tip, s, kind, extra = 0) {
   m1.textContent = `${s.project_name ? `${s.project_name} · ` : ''}${cat} · ${fmtDate(s.started_at)}`
   const m2 = document.createElement('p'); m2.className = 'ff-tip-m'
   const alignTxt = s.avg_align == null ? 'ALIGN —' : `ALIGN ${Math.round(s.avg_align * 100)}%`
-  m2.textContent = `${durationMin(s)} min · ${alignTxt}${extra ? ` · grove of ${extra + 1}` : ''}`
+  m2.textContent = `${durationMin(s)} min · ${alignTxt}${outcomeLabel(s) ? ` · ${outcomeLabel(s)}` : ''}${extra ? ` · grove of ${extra + 1}` : ''}`
   tip.append(t, m1, m2)
   if (isMonitorLive()) {
     const m3 = document.createElement('p'); m3.className = 'ff-tip-m ff-tip-hint'

@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  continueSession,
+  dropHeld,
   endBreak,
   endIntention,
   fetchCategories,
   fetchProjects,
   fetchStatus,
+  holdIntention,
   isLocal,
   pauseIntention,
   pickableCategory,
+  resumeHeld,
+  setSessionOutcome,
   startBreak,
   startIntention,
 } from '../lib/dataSource'
+import { PRESENCE_EVENT, reportPresence } from '../lib/presence'
 import ErrorNote from './ErrorNote'
 
 // Mirrors the monitor's own validation (monitor/intentions.py). A focus
@@ -130,7 +136,7 @@ function Dial({ snap, colors, verb = 'ends' }) {
                 strokeDashoffset={circ * (1 - used)} />
       </svg>
       <div>
-        <div className="text-3xl font-bold leading-none tabular-nums text-slate-800 dark:text-slate-100">
+        <div data-testid="session-clock" className="text-3xl font-bold leading-none tabular-nums text-slate-800 dark:text-slate-100">
           {formatLeft(left)}
         </div>
         <div className="text-xs text-slate-400 dark:text-slate-500 mt-1.5">
@@ -168,11 +174,52 @@ function Stopwatch({ snap, colors }) {
                 strokeDashoffset={circ * (1 - used)} />
       </svg>
       <div>
-        <div className="text-3xl font-bold leading-none tabular-nums text-slate-800 dark:text-slate-100">
+        <div data-testid="session-clock" className="text-3xl font-bold leading-none tabular-nums text-slate-800 dark:text-slate-100">
           {formatLeft(worked)}
         </div>
         <div className="text-xs text-slate-400 dark:text-slate-500 mt-1.5">
           {wait > 0 ? `worked · Done in ${formatLeft(wait)}` : 'worked · marathon'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// The clock while the dashboard itself is holding the session (it pauses for
+// as long as this page is the window in front). There is no moment that
+// pause is known to end, so nothing counts down: the session's own time is
+// shown standing still, time left for a countdown, time worked for a marathon.
+function FrozenDial({ snap, colors }) {
+  const secs = snap.untimed ? snap.elapsed_sec || 0 : snap.remaining_sec || 0
+  let used
+  if (snap.untimed) {
+    const need = secs + (snap.finish_in_sec || 0)
+    used = need > 0 ? Math.min(1, secs / need) : 1
+  } else {
+    // The declared length: the session's window without its pauses.
+    const it = snap.intention || {}
+    const a = parseStamp(it.started_at), b = parseStamp(it.ends_at)
+    const span = a && b ? (b - a) / 1000 - (it.paused_sec || 0) : 0
+    used = span > 0 ? Math.min(1, Math.max(0, 1 - secs / span)) : 0
+  }
+  const r = 34
+  const circ = 2 * Math.PI * r
+  return (
+    <div className="flex items-center gap-4">
+      <svg width="84" height="84" viewBox="0 0 84 84" className="-rotate-90 flex-none">
+        <circle cx="42" cy="42" r={r} fill="none" strokeWidth="6"
+                className="stroke-slate-200 dark:stroke-slate-800" />
+        <circle cx="42" cy="42" r={r} fill="none" strokeWidth="6" strokeLinecap="round"
+                className={colors.ring}
+                stroke="currentColor" strokeDasharray={circ}
+                strokeDashoffset={circ * (1 - used)} />
+      </svg>
+      <div>
+        <div data-testid="session-clock" className="text-3xl font-bold leading-none tabular-nums text-slate-800 dark:text-slate-100">
+          {formatLeft(secs)}
+        </div>
+        <div className="text-xs text-slate-400 dark:text-slate-500 mt-1.5">
+          {snap.untimed ? 'worked · paused' : 'left · paused'}
         </div>
       </div>
     </div>
@@ -211,6 +258,10 @@ export default function IntentionCard() {
   const [project, setProject] = useState(lastProject)
   const [projs, setProjs] = useState([])
   const [pending, setPending] = useState(null)   // a 409 from the gate: {picked, suggested, reason}
+  // The session just marked incomplete, while its next step is on offer.
+  const [followUp, setFollowUp] = useState(null)
+  // The held session whose Drop was clicked once and is waiting for the second.
+  const [dropping, setDropping] = useState(null)
   const alive = useRef(true)
 
   const refresh = useCallback(() => {
@@ -225,7 +276,14 @@ export default function IntentionCard() {
     refresh()
     // keep in sync with the tray, the timer widget, other tabs and expiry
     const id = setInterval(refresh, 5000)
-    return () => { alive.current = false; clearInterval(id) }
+    // The session pauses while this page is in front; redraw the moment the
+    // monitor answers the page's "I'm in front" / "I'm not" (lib/presence).
+    window.addEventListener(PRESENCE_EVENT, refresh)
+    return () => {
+      alive.current = false
+      clearInterval(id)
+      window.removeEventListener(PRESENCE_EVENT, refresh)
+    }
   }, [refresh])
 
   useEffect(() => {
@@ -255,6 +313,9 @@ export default function IntentionCard() {
     setError(null)
     try {
       await fn()
+      // Whatever just started or came back is held from its first second
+      // while this page is in front, not from the next beat.
+      await reportPresence()
       refresh()
     } catch (e) {
       setError(e)
@@ -310,18 +371,147 @@ export default function IntentionCard() {
   // A pause is a break under the hood, so resuming early is ending the
   // break — the monitor hands the unused part of the minute back.
   const resume = () => run(() => endBreak())
+  // On hold: the session leaves this box for the one underneath, with its
+  // time, category and project, and comes back from there.
+  const hold = () => run(() => holdIntention())
+  const resumeRow = (h) => run(() => resumeHeld(h.id))
+  const dropRow = (h) => run(async () => { await dropHeld(h.id); setDropping(null) })
+  // "Did you finish it?" — the answer is stored on the session; an
+  // incomplete one is offered its next step before the question goes away.
+  const ask = snap.ask || null
+  const answer = (outcome) => run(async () => {
+    await setSessionOutcome(ask.id, outcome)
+    if (outcome === 'incomplete') setFollowUp(ask)
+  })
+  const carryOn = (onHold) => run(async () => {
+    await continueSession(followUp.id, onHold)
+    setFollowUp(null)
+  })
 
   const card = 'mb-6 bg-white dark:bg-slate-900 border border-transparent dark:border-slate-800 p-6 rounded-lg shadow-md transition-colors'
+  const quiet = 'px-3 py-1.5 rounded-md text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors'
+  const solid = 'px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors'
+  const held = snap.held || []
+  const onBreak = snap.phase === 'break'
+
+  const askPanel = followUp ? (
+    <div data-testid="outcome-next" className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/30 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+      <span className="grow">
+        Marked incomplete: <b>{followUp.text}</b>. Pick it up again?
+      </span>
+      <button
+        onClick={() => carryOn(false)}
+        disabled={busy}
+        title={onBreak
+          ? 'Ends your break and starts it again now, same length'
+          : 'Starts it again now, same length'}
+        className="rounded-md bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700 disabled:opacity-50"
+      >
+        Continue now
+      </button>
+      <button
+        onClick={() => carryOn(true)}
+        disabled={busy}
+        title="Keeps it in the On hold box below, ready to resume when you are"
+        className="rounded-md border border-amber-400 px-2.5 py-1 hover:bg-amber-100 dark:hover:bg-amber-500/20 disabled:opacity-50"
+      >
+        Put on hold
+      </button>
+      <button
+        onClick={() => setFollowUp(null)}
+        disabled={busy}
+        className="rounded-md px-2.5 py-1 hover:bg-amber-100 dark:hover:bg-amber-500/20 disabled:opacity-50"
+      >
+        Not now
+      </button>
+    </div>
+  ) : ask ? (
+    <div data-testid="outcome-ask" className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
+      <span className="grow">
+        <b>{ask.text}</b> {ask.status === 'expired' ? 'ran its time' : 'ended'} at {timeLabel(parseStamp(ask.ended_at))}. Did you finish it?
+      </span>
+      <button onClick={() => answer('complete')} disabled={busy} className="rounded-md bg-emerald-500 px-2.5 py-1 text-white hover:bg-emerald-600 disabled:opacity-50">
+        Completed
+      </button>
+      <button onClick={() => answer('incomplete')} disabled={busy} className="rounded-md border border-slate-300 dark:border-slate-600 px-2.5 py-1 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50">
+        Incomplete
+      </button>
+      <button
+        onClick={() => answer('skipped')}
+        disabled={busy}
+        title="Don't record an answer for this one"
+        className="rounded-md px-2.5 py-1 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
+      >
+        Skip
+      </button>
+    </div>
+  ) : null
+
+  // Sessions on hold, in their own box under the session box.
+  const shelf = held.length > 0 && (
+    <div data-testid="held-sessions" className={card}>
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
+        <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+          On hold
+        </h2>
+        <span className="text-xs text-slate-400 dark:text-slate-500">
+          not counted as sessions until they finish
+        </span>
+      </div>
+      <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+        {held.map((h) => (
+          <li key={h.id} data-testid="held-row" className="flex flex-wrap items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+            <div className="flex-1 min-w-[220px]">
+              <div className="text-sm font-medium text-slate-800 dark:text-slate-100">{h.text}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {[
+                  h.llm_category,
+                  h.project?.name,
+                  h.untimed
+                    ? `marathon · ${formatLeft(h.worked_sec || 0)} worked`
+                    : `${formatLeft(h.remaining_sec || 0)} left`,
+                  `on hold since ${timeLabel(parseStamp(h.held_at))}`,
+                ].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+            <button
+              onClick={() => resumeRow(h)}
+              disabled={busy}
+              title={snap.phase === 'session'
+                ? 'Picks this up where you left it — the session running now goes on hold in its place'
+                : onBreak
+                  ? 'Ends your break and picks this up where you left it'
+                  : 'Picks this up where you left it'}
+              className={solid}
+            >
+              Resume
+            </button>
+            {dropping === h.id ? (
+              <button onClick={() => dropRow(h)} disabled={busy} title="Abandons this session for good" className="px-3 py-1.5 rounded-md text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-50 transition-colors">
+                Drop it
+              </button>
+            ) : (
+              <button onClick={() => setDropping(h.id)} disabled={busy} title="Give up on this session instead of resuming it" className={quiet}>
+                Drop
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 
   if (snap.phase === 'break') {
     return (
-      <div className={card}>
+      <>
+      <div className={card} data-testid="session-card" data-phase={snap.phase}>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
             Break
           </h2>
           <Chip colors={colors} />
         </div>
+        {askPanel}
         <div className="flex flex-wrap items-center justify-between gap-6">
           <Dial snap={snap} colors={colors} />
           <p className="flex-1 min-w-[240px] text-sm text-slate-500 dark:text-slate-400">
@@ -339,11 +529,16 @@ export default function IntentionCard() {
         </div>
         <ErrorNote error={error} className="mt-3" />
       </div>
+      {shelf}
+      </>
     )
   }
 
   if (snap.phase === 'session') {
     const paused = snap.state === 'paused'
+    // Paused because this page is in front, not because a pause was asked
+    // for: no countdown to a resume, and every control stays available.
+    const byDashboard = paused && snap.paused_by === 'dashboard'
     // While paused, snap's started_at/ends_at window is the pause itself, so
     // the Dial counts down to the resume. The session's own frozen remainder
     // is how far its (extended) end sits past the pause's end.
@@ -354,7 +549,8 @@ export default function IntentionCard() {
     const finishWait = snap.untimed ? snap.finish_in_sec || 0 : 0
     const breakMin = snap.untimed ? snap.pause_max_min || 5 : 1
     return (
-      <div className={card}>
+      <>
+      <div className={card} data-testid="session-card" data-phase={snap.phase}>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
             Focus session
@@ -363,7 +559,7 @@ export default function IntentionCard() {
         </div>
         <div className="flex flex-wrap items-start gap-6">
           <div className="flex-[2] min-w-[220px]">
-            <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+            <div data-testid="session-label" className="text-lg font-semibold text-slate-800 dark:text-slate-100">
               {snap.label}
             </div>
             {snap.intention?.project?.name && (
@@ -376,18 +572,22 @@ export default function IntentionCard() {
                 own classification. The timer widget shows the same field and
                 floats over real work, where it means something. */}
             <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-              {paused
+              {byDashboard
+                ? `started ${timeLabel(parseStamp(snap.started_at))}${snap.untimed ? ' · marathon' : ''} · paused while you're here`
+                : paused
                 ? snap.untimed
                   ? `marathon clock waiting at ${formatLeft(snap.elapsed_sec || 0)}`
                   : `timer frozen${frozenLeft != null ? ` — resumes with ${formatLeft(frozenLeft)} left` : ''}`
                 : `started ${timeLabel(parseStamp(snap.started_at))}${snap.untimed ? ' · marathon' : ''}`}
             </div>
           </div>
-          {snap.untimed && !paused
-            ? <Stopwatch snap={snap} colors={colors} />
-            : <Dial snap={snap} colors={colors} verb={paused ? 'resumes' : 'ends'} />}
-          <div className="flex gap-2">
-            {paused ? (
+          {byDashboard
+            ? <FrozenDial snap={snap} colors={colors} />
+            : snap.untimed && !paused
+              ? <Stopwatch snap={snap} colors={colors} />
+              : <Dial snap={snap} colors={colors} verb={paused ? 'resumes' : 'ends'} />}
+          <div className="flex flex-wrap gap-2">
+            {paused && !byDashboard ? (
               <button
                 onClick={resume}
                 disabled={busy}
@@ -421,6 +621,14 @@ export default function IntentionCard() {
               </>
             )}
             <button
+              onClick={hold}
+              disabled={busy}
+              title="Shelves this session with the time it has left — resume it later from the On hold box. It isn't counted until it finishes"
+              className={quiet}
+            >
+              Put on hold
+            </button>
+            <button
               onClick={() => finish('abandoned')}
               disabled={busy}
               title="Ends the session without a break"
@@ -430,19 +638,29 @@ export default function IntentionCard() {
             </button>
           </div>
         </div>
+        {byDashboard && (
+          <p data-testid="dashboard-pause-note" className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+            Paused while you're on the dashboard: the {snap.untimed ? 'marathon clock' : 'countdown'} stands
+            still and nothing is scored. It picks up again the moment you switch back to your work.
+          </p>
+        )}
         <ErrorNote error={error} className="mt-3" />
       </div>
+      {shelf}
+      </>
     )
   }
 
   return (
-    <div className={card}>
+    <>
+    <div className={card} data-testid="session-card" data-phase={snap.phase}>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
         <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
           Focus session
         </h2>
         <Chip colors={colors} />
       </div>
+      {askPanel}
       <div className="flex flex-wrap items-center gap-3">
         <input
           type="text"
@@ -576,5 +794,7 @@ export default function IntentionCard() {
 
       <ErrorNote error={error} className="mt-3" />
     </div>
+    {shelf}
+    </>
   )
 }

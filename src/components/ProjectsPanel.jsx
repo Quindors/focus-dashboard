@@ -368,7 +368,7 @@ export default function ProjectsPanel() {
     const out = new Map()
     for (const s of sessions) {
       if (s.project_id == null || !s.started_at || !s.ended_at) continue
-      const mins = Math.max(0, Math.round((parseTs(s.ended_at) - parseTs(s.started_at)) / 60000))
+      const mins = Math.max(0, Math.round((parseTs(s.ended_at) - parseTs(s.started_at)) / 60000 - (Number(s.paused_sec) || 0) / 60))
       const cur = out.get(s.project_id) || { count: 0, minutes: 0, last: null }
       cur.count += 1
       cur.minutes += mins

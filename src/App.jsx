@@ -15,6 +15,7 @@ import ProjectsPanel from './components/ProjectsPanel'
 import MonitorBanner from './components/MonitorBanner'
 import ModeToggle from './components/ModeToggle'
 import PipelineBanner from './components/PipelineBanner'
+import { watchPresence } from './lib/presence'
 
 function TabBar({ tab, setTab }) {
   const tabs = [
@@ -86,6 +87,9 @@ function LastUpdated({ at }) {
 function App() {
   const { data, error, loading, lastUpdated } = useFocusData()
   const [tab, setTab] = useState('overview')
+  // The running session pauses while this page is the window in front,
+  // whichever tab of it is showing (lib/presence.js).
+  useEffect(() => watchPresence(), [])
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-8 transition-colors">

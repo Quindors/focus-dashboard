@@ -247,6 +247,37 @@ export async function pauseIntention(minutes) {
   return apiPost('/api/intention/pause', minutes ? { minutes } : {})
 }
 
+// Put the running session on hold: it keeps its text, category, project and
+// the time it had left, and is neither running nor finished until resumed.
+// The shelf comes back on fetchStatus() as .
+export async function holdIntention() {
+  const d = await apiPost('/api/intention/hold', {})
+  return d.held
+}
+
+// Bring a held session back with the time it left with. A session running
+// at that moment takes its place on hold; a running break ends.
+export async function resumeHeld(id) {
+  return apiPost('/api/intention/resume', { id })
+}
+
+// Give up on a held session (it becomes abandoned).
+export async function dropHeld(id) {
+  return apiPost('/api/intention/drop', { id })
+}
+
+// The answer to "did you finish it?" for a finished session:
+// 'complete' | 'incomplete' | 'skipped', or null to clear.
+export async function setSessionOutcome(id, outcome) {
+  return apiPost('/api/sessions/outcome', { id, outcome: outcome || null })
+}
+
+// Pick a finished session's work up again as a new session with the same
+// text, category, project and length: on hold (default) or started now.
+export async function continueSession(id, hold = true) {
+  return apiPost('/api/sessions/continue', { id, hold })
+}
+
 // Finished focus sessions (completed or expired — the same set Beeminder
 // counts), newest first, each with the mean 0-1 ALIGN over its scored rows
 // (avg_align, null if none were scored) and the observed category. Local API

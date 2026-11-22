@@ -54,11 +54,19 @@ export function hillY(x, cx, cy, rx, ry) {
 }
 
 export const parseTs = (s) => new Date(String(s).replace(' ', 'T'))
+// Minutes a session ran, without its pauses: the one-minute kind, a
+// marathon's breaks, and the time it stood still because the dashboard was
+// in front (paused_sec; absent on the cloud copy before it carried it).
 export function durationMin(s) {
   const a = parseTs(s.started_at), b = parseTs(s.ended_at || s.started_at)
-  const m = Math.round((b - a) / 60000)
+  const m = Math.round((b - a) / 60000 - (Number(s.paused_sec) || 0) / 60)
   return Number.isFinite(m) && m > 0 ? m : 0
 }
+
+// How the session's own "did you finish it?" was answered, in words, or ''
+// when it was never asked or the question was skipped.
+export const outcomeLabel = (s) =>
+  s.outcome === 'complete' ? 'completed' : s.outcome === 'incomplete' ? 'left incomplete' : ""
 export const monthKey = (s) => String(s.started_at).slice(0, 7)
 export function monthLabel(key) {
   const [y, m] = key.split('-').map(Number)

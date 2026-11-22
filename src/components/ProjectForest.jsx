@@ -6,7 +6,7 @@ import {
   DEAD_DAYS, FADE_DAYS, FRESH_DAYS, STATES, WATER_MIN_ALIGN, isWatering, projectLife,
 } from '../lib/projectLife'
 import {
-  ambientSpans, defsFor, drawBackdrop, drawLandmark, drawTree, durationMin, el, fmtDate,
+  ambientSpans, defsFor, drawBackdrop, drawLandmark, drawTree, durationMin, el, fmtDate, outcomeLabel,
   foliageFill, hillY, jitter, parseTs, pts, sessionCategory, speciesFor, addHalo,
 } from '../lib/forestDraw'
 
@@ -418,11 +418,15 @@ function spiralSpot(i, seedOff, spread = 1) {
   return { x: Math.min(950, Math.max(50, x)), y: Math.min(482, Math.max(398, y)) }
 }
 
+// The session's complete/incomplete answer as a trailing " · left incomplete"
+// (", left incomplete" in a spoken label); nothing when it was never given.
+const thenOutcome = (s, sep = ' · ') => (outcomeLabel(s) ? `${sep}${outcomeLabel(s)}` : '')
+
 const sessionLines = (s, fallbackCat) => {
   const mins = durationMin(s)
   const alignTxt = s.avg_align == null ? 'ALIGN —' : `ALIGN ${Math.round(s.avg_align * 100)}%`
   const cat = sessionCategory(s) || fallbackCat || 'Uncategorized'
-  return [s.text, `${cat} · ${fmtDate(s.started_at)}`, `${mins} min · ${alignTxt} · ${isWatering(s) ? 'a watering' : 'not a watering'}`]
+  return [s.text, `${cat} · ${fmtDate(s.started_at)}`, `${mins} min · ${alignTxt} · ${isWatering(s) ? 'a watering' : 'not a watering'}${thenOutcome(s)}`]
 }
 
 // api: { pin(story), lit(id) -> bool, toggleLit(id) } — the React side of
@@ -574,7 +578,7 @@ function renderEcosystem(svg, tip, life, uid, seedOff, api) {
     const pfill = foliageFill(speciesFor(sessionCategory(s) || p.category).kind, s.avg_align)
     const g = el('g', {
       class: `ff-tree ff-plant ff-plant-${kind}`, transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, tabindex: '0',
-      'aria-label': `${s.text}, ${ELEMENT_LABEL[kind]}, ${mins} minutes`,
+      'aria-label': `${s.text}, ${ELEMENT_LABEL[kind]}, ${mins} minutes${thenOutcome(s, ', ')}`,
     })
     const plant = drawElement(kind, pfill, esc, i + seedOff)
     g.appendChild(plant)
@@ -592,7 +596,7 @@ function renderEcosystem(svg, tip, life, uid, seedOff, api) {
         api.pin({
           kind: 'session', title: s.text, s,
           lines: [
-            `${sessionCategory(s) || p.category || 'Uncategorized'} · ${fmtDate(s.started_at)} · ${mins} min · ${s.avg_align == null ? 'unscored' : `ALIGN ${Math.round(s.avg_align * 100)}%`}`,
+            `${sessionCategory(s) || p.category || 'Uncategorized'} · ${fmtDate(s.started_at)} · ${mins} min · ${s.avg_align == null ? 'unscored' : `ALIGN ${Math.round(s.avg_align * 100)}%`}${thenOutcome(s)}`,
             isWatering(s)
               ? `A watering: it kept ${p.name} green${kind === 'bloom' ? ', and grew into a flowering bush' : ''}.`
               : `Not a watering (under ${Math.round(WATER_MIN_ALIGN * 100)}% align): it counts as hours, not water, and grew into a ${ELEMENT_LABEL[kind]}.`,
@@ -679,7 +683,7 @@ function renderWilds(svg, tip, rows, uid, seedOff, api) {
     const sc = size
     const g = el('g', {
       class: 'ff-tree', transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, tabindex: '0',
-      'aria-label': `${s.text}, ${sp.label}, ${mins} minutes`,
+      'aria-label': `${s.text}, ${sp.label}, ${mins} minutes${thenOutcome(s, ', ')}`,
     })
     const fill = foliageFill(sp.kind, s.avg_align)
     const tree = drawTree(sp.kind, fill, sc, uid, i + seedOff)
@@ -687,7 +691,7 @@ function renderWilds(svg, tip, rows, uid, seedOff, api) {
     g.appendChild(tree)
     attachTip(g, svg, tip, () => {
       const alignTxt = s.avg_align == null ? 'ALIGN —' : `ALIGN ${Math.round(s.avg_align * 100)}%`
-      return [s.text, `${sp.label} · ${fmtDate(s.started_at)}`, `${mins} min · ${alignTxt}`]
+      return [s.text, `${sp.label} · ${fmtDate(s.started_at)}`, `${mins} min · ${alignTxt}${thenOutcome(s)}`]
     }, {
       hint: 'Click to shake it',
       onClick: () => {
@@ -698,7 +702,7 @@ function renderWilds(svg, tip, rows, uid, seedOff, api) {
         api.pin({
           kind: 'wild', title: s.text, s,
           lines: [
-            `${sp.label} · ${fmtDate(s.started_at)} · ${mins} min · ${s.avg_align == null ? 'unscored' : `ALIGN ${Math.round(s.avg_align * 100)}%`}`,
+            `${sp.label} · ${fmtDate(s.started_at)} · ${mins} min · ${s.avg_align == null ? 'unscored' : `ALIGN ${Math.round(s.avg_align * 100)}%`}${thenOutcome(s)}`,
             isWatering(s) ? 'Filed under a project, this session would water its tree.' : 'Filed under a project, this session would count as hours there, not water.',
           ],
         })
